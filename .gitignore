@@ -1,0 +1,20 @@
+# Rojo build output
+*.rbxl
+*.rbxlx
+*.rbxm
+*.rbxmx
+
+# Rojo sourcemap (regenerated, no need to track)
+sourcemap.json
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# Aftman/Foreman tool binaries (if used later)
+.aftman/
