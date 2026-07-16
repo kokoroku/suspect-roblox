@@ -21,6 +21,7 @@ local LoadoutService = require(script.Parent.LoadoutService)
 local GachaService = require(script.Parent.GachaService)
 local RoleManager = require(script.Parent.RoleManager)
 local TaskManager = require(script.Parent.TaskManager)
+local KillSystem = require(script.Parent.KillSystem)
 
 -- ============================================================
 -- UsePowerup
@@ -49,7 +50,22 @@ Remotes.Get(Remotes.Names.SetLoadout).OnServerEvent:Connect(function(player, pow
 end)
 
 -- ============================================================
--- Starter currency + TEMP task assignment for solo testing.
+-- AttemptKill - client sends who they're trying to kill
+-- ============================================================
+Remotes.Get(Remotes.Names.AttemptKill).OnServerEvent:Connect(function(player, targetPlayer)
+	if not targetPlayer or not targetPlayer:IsA("Player") then
+		warn(player.Name, "sent an invalid AttemptKill target")
+		return
+	end
+
+	local success, reason = KillSystem.AttemptKill(player, targetPlayer)
+	if not success then
+		warn(player.Name, "failed to kill", targetPlayer.Name, "-", reason)
+	end
+end)
+
+-- ============================================================
+-- Starter currency + TEMP task/role assignment for solo testing.
 -- Real match-start flow (lobby -> round begins -> assign roles + tasks
 -- together) replaces this block once MeetingSystem/round flow exists.
 -- ============================================================
@@ -57,6 +73,9 @@ Players.PlayerAdded:Connect(function(player)
 	player:SetAttribute("Currency", 500)
 	task.wait(1)
 	TaskManager.AssignTasks(Players:GetPlayers())
+	-- TEMP: everyone is Impostor for solo testing the kill button.
+	-- Real games use RoleManager.AssignRoles() at match start instead.
+	RoleManager.AssignRoles(Players:GetPlayers())
 end)
 
 print("[Suspect] Services initialized.")
