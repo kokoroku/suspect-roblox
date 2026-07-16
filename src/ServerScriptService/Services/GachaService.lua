@@ -3,6 +3,9 @@
 	Handles rolling for powerup variants. Odds are always computed from
 	PowerupService.Definitions so the UI and the actual roll can NEVER
 	drift out of sync - one source of truth for both display and outcome.
+	Successful rolls grant/upgrade ownership via PowerupOwnershipService -
+	rolling does NOT equip anything, players still choose their 2-slot
+	loadout separately (see LoadoutService).
 
 	NOTE: CurrencyService (spending/earning soft currency) isn't built yet -
 	this stubs a GetBalance/Spend pair so GachaService can be wired up now
@@ -11,8 +14,10 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
+local ServerScriptService = game:GetService("ServerScriptService")
 
 local PowerupService = require(script.Parent.PowerupService)
+local PowerupOwnershipService = require(ServerScriptService.Services.PowerupOwnershipService)
 
 local GachaService = {}
 
@@ -70,7 +75,7 @@ local function rollVariant(powerupId, forceRareOrBetter)
 end
 
 -- Main entry point: called from the RollGacha RemoteEvent handler.
--- Returns (success: bool, resultOrError: string, variant: string?)
+-- Returns (success: bool, resultOrError: string, variant: string?, wasUpgrade: bool?)
 function GachaService.Roll(player, powerupId)
 	if not PowerupService.Definitions[powerupId] then
 		return false, "UnknownPowerup"
@@ -89,9 +94,9 @@ function GachaService.Roll(player, powerupId)
 		pityCounter[player] = 0
 	end
 
-	PowerupService.GrantPowerup(player, powerupId, variant)
+	local wasUpgradeOrNew = PowerupOwnershipService.GrantOrUpgrade(player, powerupId, variant)
 
-	return true, "Success", variant
+	return true, "Success", variant, wasUpgradeOrNew
 end
 
 -- Used by the lobby UI to show odds + current pity progress before rolling.

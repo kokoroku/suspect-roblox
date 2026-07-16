@@ -1,8 +1,7 @@
 --[[
 	TestClient.client.lua
 	TEMPORARY - delete this once real lobby UI exists.
-	Fires a gacha roll, then attempts to use whatever powerup it lands on,
-	so you can confirm the whole pipeline works without any UI built yet.
+	Full pipeline test: roll gacha -> equip loadout -> use powerup.
 	Watch the Output window while Playing.
 ]]
 
@@ -10,16 +9,28 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
 
 local rollEvent = Remotes.Get(Remotes.Names.RollGacha)
-local resultEvent = Remotes.Get(Remotes.Names.GachaResult)
+local gachaResultEvent = Remotes.Get(Remotes.Names.GachaResult)
+local setLoadoutEvent = Remotes.Get(Remotes.Names.SetLoadout)
+local loadoutResultEvent = Remotes.Get(Remotes.Names.LoadoutResult)
 local useEvent = Remotes.Get(Remotes.Names.UsePowerup)
 
-resultEvent.OnClientEvent:Connect(function(success, result, variant)
-	print("[TestClient] Gacha result:", success, result, variant)
+loadoutResultEvent.OnClientEvent:Connect(function(success, reason)
+	print("[TestClient] Loadout set:", success, reason)
 
 	if success then
 		task.wait(1)
 		print("[TestClient] Attempting to use SpeedBoost...")
 		useEvent:FireServer("SpeedBoost")
+	end
+end)
+
+gachaResultEvent.OnClientEvent:Connect(function(success, result, variant)
+	print("[TestClient] Gacha result:", success, result, variant)
+
+	if success then
+		task.wait(1)
+		print("[TestClient] Equipping SpeedBoost as loadout slot 1...")
+		setLoadoutEvent:FireServer({ "SpeedBoost" })
 	end
 end)
 
