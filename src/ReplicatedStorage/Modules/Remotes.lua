@@ -18,6 +18,7 @@ Remotes.Names = {
 	CastVote = "CastVote",
 	UsePowerup = "UsePowerup",
 	RollGacha = "RollGacha",
+	SetLoadout = "SetLoadout",
 
 	-- Server -> Client notifications
 	RoleAssigned = "RoleAssigned",
@@ -25,6 +26,7 @@ Remotes.Names = {
 	VoteResult = "VoteResult",
 	MatchEnded = "MatchEnded",
 	GachaResult = "GachaResult",
+	LoadoutResult = "LoadoutResult",
 	InventoryUpdated = "InventoryUpdated",
 }
 
