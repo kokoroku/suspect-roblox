@@ -25,6 +25,21 @@ local KillSystem = require(script.Parent.KillSystem)
 local MeetingSystem = require(script.Parent.MeetingSystem)
 
 -- ============================================================
+-- TESTING TOGGLE - set to false to go back to normal 1-impostor ratio.
+-- Do not ship with this set to true.
+-- ============================================================
+local DEBUG_ALL_IMPOSTORS = false
+
+-- ============================================================
+-- Manual respawn control. Roblox auto-respawns characters a few seconds
+-- after death by default - that's what was undoing your kills/ejections.
+-- Turning this off means WE decide when a character (re)spawns, which is
+-- also the right foundation for ghost mode later (dead players staying
+-- as their ragdoll/a ghost instead of popping back in).
+-- ============================================================
+Players.CharacterAutoLoads = false
+
+-- ============================================================
 -- UsePowerup
 -- ============================================================
 Remotes.Get(Remotes.Names.UsePowerup).OnServerEvent:Connect(function(player, powerupId)
@@ -86,18 +101,23 @@ Remotes.Get(Remotes.Names.CastVote).OnServerEvent:Connect(function(player, targe
 end)
 
 -- ============================================================
--- Starter currency + TEMP task/role assignment for solo testing.
--- Real match-start flow (lobby -> round begins -> assign roles + tasks
--- together) replaces this block once a proper round-reset flow exists.
+-- Player join: manual spawn (since CharacterAutoLoads is off), then
+-- TEMP task/role assignment for solo testing. Real match-start flow
+-- (lobby -> round begins -> assign roles + tasks together, spawn all
+-- players fresh) replaces this block once a proper round-reset flow exists.
 -- ============================================================
 Players.PlayerAdded:Connect(function(player)
 	player:SetAttribute("Currency", 500)
+	player:LoadCharacter() -- manual spawn, required now that CharacterAutoLoads is false
+
 	task.wait(1)
 	TaskManager.AssignTasks(Players:GetPlayers())
-	-- Real ratio-based role assignment (RoleManager decides ~1 impostor
-	-- per 6 players, minimum 1). Re-running this on every join is a TEMP
-	-- stand-in for a proper match-start flow, which round-reset will replace.
-	RoleManager.AssignRoles(Players:GetPlayers())
+
+	if DEBUG_ALL_IMPOSTORS then
+		RoleManager.DebugForceAllImpostor(Players:GetPlayers())
+	else
+		RoleManager.AssignRoles(Players:GetPlayers())
+	end
 end)
 
 print("[Suspect] Services initialized.")

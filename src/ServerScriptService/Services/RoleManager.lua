@@ -68,6 +68,20 @@ function RoleManager.AssignRoles(playersInMatch)
 	end
 end
 
+-- TESTING ONLY - forces every given player to Impostor, alive. Useful for
+-- exercising kill/meeting flow with more than 1 impostor before real
+-- matchmaking exists. Flip DEBUG_ALL_IMPOSTORS off in Bootstrap to go
+-- back to normal ratio-based assignment - don't ship with this active.
+function RoleManager.DebugForceAllImpostor(playersInMatch)
+	playerState = {}
+
+	for _, player in ipairs(playersInMatch) do
+		playerState[player] = { role = "Impostor", alive = true }
+		local roleEvent = Remotes.Get(Remotes.Names.RoleAssigned)
+		roleEvent:FireClient(player, "Impostor")
+	end
+end
+
 -- Returns "CrewWin", "ImpostorWin", or nil if the match should continue.
 function RoleManager.CheckWinCondition(tasksRemaining)
 	local aliveImpostors, aliveCrew = 0, 0
