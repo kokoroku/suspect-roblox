@@ -22,6 +22,7 @@ local GachaService = require(script.Parent.GachaService)
 local RoleManager = require(script.Parent.RoleManager)
 local TaskManager = require(script.Parent.TaskManager)
 local KillSystem = require(script.Parent.KillSystem)
+local MeetingSystem = require(script.Parent.MeetingSystem)
 
 -- ============================================================
 -- UsePowerup
@@ -65,9 +66,29 @@ Remotes.Get(Remotes.Names.AttemptKill).OnServerEvent:Connect(function(player, ta
 end)
 
 -- ============================================================
+-- CallMeeting - emergency meeting button (bound to M on the client)
+-- ============================================================
+Remotes.Get(Remotes.Names.CallMeeting).OnServerEvent:Connect(function(player)
+	local success, reason = MeetingSystem.StartMeeting(player, "Emergency", nil)
+	if not success then
+		warn(player.Name, "failed to call meeting -", reason)
+	end
+end)
+
+-- ============================================================
+-- CastVote - client sends a target player name, or nil/false to Skip
+-- ============================================================
+Remotes.Get(Remotes.Names.CastVote).OnServerEvent:Connect(function(player, targetName)
+	local success, reason = MeetingSystem.CastVote(player, targetName)
+	if not success then
+		warn(player.Name, "failed to cast vote -", reason)
+	end
+end)
+
+-- ============================================================
 -- Starter currency + TEMP task/role assignment for solo testing.
 -- Real match-start flow (lobby -> round begins -> assign roles + tasks
--- together) replaces this block once MeetingSystem/round flow exists.
+-- together) replaces this block once a proper round-reset flow exists.
 -- ============================================================
 Players.PlayerAdded:Connect(function(player)
 	player:SetAttribute("Currency", 500)
@@ -75,8 +96,7 @@ Players.PlayerAdded:Connect(function(player)
 	TaskManager.AssignTasks(Players:GetPlayers())
 	-- Real ratio-based role assignment (RoleManager decides ~1 impostor
 	-- per 6 players, minimum 1). Re-running this on every join is a TEMP
-	-- stand-in for a proper match-start flow, which MeetingSystem/round
-	-- flow will replace.
+	-- stand-in for a proper match-start flow, which round-reset will replace.
 	RoleManager.AssignRoles(Players:GetPlayers())
 end)
 
