@@ -73,8 +73,10 @@ Players.PlayerAdded:Connect(function(player)
 	player:SetAttribute("Currency", 500)
 	task.wait(1)
 	TaskManager.AssignTasks(Players:GetPlayers())
-	-- TEMP: everyone is Impostor for solo testing the kill button.
-	-- Real games use RoleManager.AssignRoles() at match start instead.
+	-- Real ratio-based role assignment (RoleManager decides ~1 impostor
+	-- per 6 players, minimum 1). Re-running this on every join is a TEMP
+	-- stand-in for a proper match-start flow, which MeetingSystem/round
+	-- flow will replace.
 	RoleManager.AssignRoles(Players:GetPlayers())
 end)
 
