@@ -16,6 +16,12 @@ local RoleManager = {}
 -- player -> { role = "Crewmate" | "Impostor", alive = bool }
 local playerState = {}
 
+-- True only while RoleManager.DebugForceAllImpostor is active. KillSystem
+-- checks this to skip the "impostors can't kill impostors" rule during
+-- that specific test mode - that rule is correct for real games, it just
+-- can't apply when everyone is deliberately Impostor for testing.
+local debugAllImpostorMode = false
+
 local IMPOSTOR_RATIO = 1 / 6 -- ~1 impostor per 6 players, tune later
 
 function RoleManager.GetRole(player)
@@ -45,9 +51,14 @@ function RoleManager.GetAllImpostors()
 	return impostors
 end
 
+function RoleManager.IsDebugAllImpostorMode()
+	return debugAllImpostorMode
+end
+
 -- Call this at the start of a match with the list of players in the round.
 function RoleManager.AssignRoles(playersInMatch)
 	playerState = {}
+	debugAllImpostorMode = false
 
 	local impostorCount = math.max(1, math.floor(#playersInMatch * IMPOSTOR_RATIO + 0.5))
 	local shuffled = table.clone(playersInMatch)
@@ -74,6 +85,7 @@ end
 -- back to normal ratio-based assignment - don't ship with this active.
 function RoleManager.DebugForceAllImpostor(playersInMatch)
 	playerState = {}
+	debugAllImpostorMode = true
 
 	for _, player in ipairs(playersInMatch) do
 		playerState[player] = { role = "Impostor", alive = true }

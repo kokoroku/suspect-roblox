@@ -73,7 +73,7 @@ function KillSystem.AttemptKill(killer, target)
 		return false, "TargetAlreadyDead"
 	end
 
-	if RoleManager.GetRole(target) == "Impostor" then
+	if RoleManager.GetRole(target) == "Impostor" and not RoleManager.IsDebugAllImpostorMode() then
 		return false, "CannotKillImpostor"
 	end
 

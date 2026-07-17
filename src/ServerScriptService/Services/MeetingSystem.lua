@@ -8,6 +8,7 @@
 local Players = game:GetService("Players")
 local ServerScriptService = game:GetService("ServerScriptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CollectionService = game:GetService("CollectionService")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
 local RoleManager = require(ServerScriptService.Services.RoleManager)
@@ -16,6 +17,7 @@ local TaskManager = require(ServerScriptService.Services.TaskManager)
 local MeetingSystem = {}
 
 local MEETING_DURATION = 20 -- seconds to vote before auto-resolving
+local DEAD_BODY_TAG = "DeadBody" -- must match the tag KillSystem applies
 local DEFAULT_WALKSPEED = 16
 local DEFAULT_JUMPPOWER = 50
 
@@ -44,6 +46,20 @@ local function freezeAllPlayers(frozen)
 			humanoid.WalkSpeed = storedSpeeds[player] or DEFAULT_WALKSPEED
 			humanoid.JumpPower = DEFAULT_JUMPPOWER
 			storedSpeeds[player] = nil
+		end
+	end
+end
+
+-- Removes every dead body from the map. Called at the end of every meeting
+-- (whether someone was ejected or not) so bodies don't persist across
+-- rounds - a "round" is defined as the time between meetings. Destroys the
+-- ragdolled character entirely; bringing that player back (ghost mode,
+-- lobby respawn) is a separate future feature, not handled here.
+local function clearAllBodies()
+	for _, root in ipairs(CollectionService:GetTagged(DEAD_BODY_TAG)) do
+		local character = root.Parent
+		if character then
+			character:Destroy()
 		end
 	end
 end
@@ -159,6 +175,7 @@ function MeetingSystem.ResolveMeeting()
 	end
 
 	freezeAllPlayers(false)
+	clearAllBodies() -- round is over (meeting resolved) - clean the board
 
 	Remotes.Get(Remotes.Names.VoteResult):FireAllClients(
 		ejectedPlayer and ejectedPlayer.Name or nil,
