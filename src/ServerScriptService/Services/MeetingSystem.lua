@@ -165,6 +165,7 @@ function MeetingSystem.ResolveMeeting()
 	if ejectedPlayer then
 		ejectedRole = RoleManager.GetRole(ejectedPlayer)
 		RoleManager.SetAlive(ejectedPlayer, false)
+		Remotes.Get(Remotes.Names.PlayerDied):FireClient(ejectedPlayer)
 
 		-- TODO: replace with a proper "ejected into space" animation/spectate
 		-- flow later - for now just take them out of the round.

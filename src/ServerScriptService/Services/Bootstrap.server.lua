@@ -28,7 +28,7 @@ local MeetingSystem = require(script.Parent.MeetingSystem)
 -- TESTING TOGGLE - set to false to go back to normal 1-impostor ratio.
 -- Do not ship with this set to true.
 -- ============================================================
-local DEBUG_ALL_IMPOSTORS = false
+local DEBUG_ALL_IMPOSTORS = true
 
 -- ============================================================
 -- Manual respawn control. Roblox auto-respawns characters a few seconds

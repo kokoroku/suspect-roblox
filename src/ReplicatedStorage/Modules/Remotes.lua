@@ -22,6 +22,7 @@ Remotes.Names = {
 
 	-- Server -> Client notifications
 	RoleAssigned = "RoleAssigned",
+	PlayerDied = "PlayerDied",
 	MeetingStarted = "MeetingStarted",
 	VoteResult = "VoteResult",
 	MatchEnded = "MatchEnded",

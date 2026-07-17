@@ -9,7 +9,9 @@
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ServerScriptService = game:GetService("ServerScriptService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+local Remotes = require(ReplicatedStorage.Modules.Remotes)
 local RoleManager = require(ServerScriptService.Services.RoleManager)
 local TaskManager = require(ServerScriptService.Services.TaskManager)
 
@@ -31,9 +33,12 @@ local function getDistance(playerA, playerB)
 	return (rootA.Position - rootB.Position).Magnitude
 end
 
--- Turns a just-killed player's character into a reportable "body" - ragdolls
--- it and tags it so MeetingSystem's report flow can find it later, reusing
--- the same CollectionService-tag pattern as TaskStationHandler.
+-- Turns a just-killed player's character into a reportable "body" - a REAL
+-- physics ragdoll (not just BreakJoints, which leaves the Humanoid fighting
+-- to hold the character in place and looks "stuck"). Replaces every Motor6D
+-- with a BallSocketConstraint so the body stays physically connected and
+-- actually tumbles/settles - the ProximityPrompt on the root part then
+-- correctly follows it since it's part of the same simulated physics group.
 local function turnIntoBody(targetPlayer)
 	local character = targetPlayer.Character
 	if not character then
@@ -42,16 +47,57 @@ local function turnIntoBody(targetPlayer)
 
 	local humanoid = character:FindFirstChildOfClass("Humanoid")
 	if humanoid then
-		humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+		humanoid.PlatformStand = true -- stop the Humanoid from fighting the ragdoll physics
+		humanoid.AutoRotate = false
 	end
 
-	character:BreakJoints() -- ragdoll - this becomes the reportable "body"
+	for _, descendant in ipairs(character:GetDescendants()) do
+		if descendant:IsA("Motor6D") then
+			local part0, part1 = descendant.Part0, descendant.Part1
+			if part0 and part1 then
+				local attachment0 = Instance.new("Attachment")
+				attachment0.CFrame = descendant.C0
+				attachment0.Parent = part0
+
+				local attachment1 = Instance.new("Attachment")
+				attachment1.CFrame = descendant.C1
+				attachment1.Parent = part1
+
+				local socket = Instance.new("BallSocketConstraint")
+				socket.Attachment0 = attachment0
+				socket.Attachment1 = attachment1
+				socket.Parent = part0
+			end
+			descendant:Destroy()
+		elseif descendant:IsA("BasePart") then
+			descendant.CanCollide = true
+			descendant.Massless = false
+		end
+	end
 
 	local root = character:FindFirstChild("HumanoidRootPart")
 	if root then
 		root:SetAttribute("VictimName", targetPlayer.Name)
 		CollectionService:AddTag(root, DEAD_BODY_TAG)
+
+		-- CRITICAL: without this, network ownership of the physics stays
+		-- with the (now-dead) player's client, and the constraints above
+		-- never actually get simulated - the body just freezes/drops in
+		-- place instead of tumbling. Handing ownership to the server fixes
+		-- that and also makes the ragdoll behave consistently for everyone
+		-- watching, not just the owning client.
+		local ok = pcall(function()
+			root:SetNetworkOwner(nil)
+		end)
+		if not ok then
+			warn("Could not set server network ownership for ragdoll of", targetPlayer.Name)
+		end
 	end
+
+	-- Tell the victim's own client they're dead, so it can suppress
+	-- ProximityPrompts (report/task prompts) showing on their own screen -
+	-- otherwise they see a "Report" prompt for their own body immediately.
+	Remotes.Get(Remotes.Names.PlayerDied):FireClient(targetPlayer)
 end
 
 -- Called from the AttemptKill RemoteEvent handler.
