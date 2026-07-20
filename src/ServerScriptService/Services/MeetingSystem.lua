@@ -17,6 +17,8 @@ local TaskManager = require(ServerScriptService.Services.TaskManager)
 local MeetingSystem = {}
 
 local MEETING_DURATION = 20 -- seconds to vote before auto-resolving
+local MEETING_TABLE_CENTER = Vector3.new(0, 0, 0) -- must match BuildEstateMap.lua's tableCenter
+local MEETING_SEAT_RADIUS = 10 -- must match BuildEstateMap.lua's SEAT_RADIUS
 local DEAD_BODY_TAG = "DeadBody" -- must match the tag KillSystem applies
 local DEFAULT_WALKSPEED = 16
 local DEFAULT_JUMPPOWER = 50
@@ -46,6 +48,26 @@ local function freezeAllPlayers(frozen)
 			humanoid.WalkSpeed = storedSpeeds[player] or DEFAULT_WALKSPEED
 			humanoid.JumpPower = DEFAULT_JUMPPOWER
 			storedSpeeds[player] = nil
+		end
+	end
+end
+
+-- Teleports each alive player to a seat around the meeting table, facing
+-- the center, so everyone's gathered and visible (cosmetics included)
+-- instead of frozen wherever they happened to be standing.
+local function seatPlayersAtTable(alivePlayers)
+	local count = #alivePlayers
+	for i, player in ipairs(alivePlayers) do
+		local character = player.Character
+		local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+		if rootPart then
+			local angle = (2 * math.pi * (i - 1)) / count
+			local seatX = MEETING_TABLE_CENTER.X + MEETING_SEAT_RADIUS * math.cos(angle)
+			local seatZ = MEETING_TABLE_CENTER.Z + MEETING_SEAT_RADIUS * math.sin(angle)
+			-- Keep their existing Y (rig height offset) - only move X/Z,
+			-- and look toward the table center so everyone faces each other.
+			local y = rootPart.Position.Y
+			rootPart.CFrame = CFrame.new(Vector3.new(seatX, y, seatZ), Vector3.new(MEETING_TABLE_CENTER.X, y, MEETING_TABLE_CENTER.Z))
 		end
 	end
 end
@@ -87,11 +109,15 @@ function MeetingSystem.StartMeeting(caller, reason, targetName)
 	freezeAllPlayers(true)
 
 	local alivePlayerNames = {}
+	local alivePlayersList = {}
 	for _, player in ipairs(Players:GetPlayers()) do
 		if RoleManager.IsAlive(player) then
 			table.insert(alivePlayerNames, player.Name)
+			table.insert(alivePlayersList, player)
 		end
 	end
+
+	seatPlayersAtTable(alivePlayersList)
 
 	Remotes.Get(Remotes.Names.MeetingStarted):FireAllClients(reason, targetName, alivePlayerNames, MEETING_DURATION)
 
