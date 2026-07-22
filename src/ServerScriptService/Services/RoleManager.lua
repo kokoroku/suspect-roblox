@@ -51,6 +51,16 @@ function RoleManager.GetAllImpostors()
 	return impostors
 end
 
+function RoleManager.GetAllCrew()
+	local crew = {}
+	for player, state in pairs(playerState) do
+		if state.role == "Crewmate" then
+			table.insert(crew, player)
+		end
+	end
+	return crew
+end
+
 function RoleManager.IsDebugAllImpostorMode()
 	return debugAllImpostorMode
 end
@@ -85,7 +95,7 @@ end
 -- back to normal ratio-based assignment - don't ship with this active.
 function RoleManager.DebugForceAllImpostor(playersInMatch)
 	playerState = {}
-	debugAllImpostorMode = true
+	debugAllImpostorMode = false
 
 	for _, player in ipairs(playersInMatch) do
 		playerState[player] = { role = "Impostor", alive = true }

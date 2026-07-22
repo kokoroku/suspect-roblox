@@ -29,6 +29,7 @@ Remotes.Names = {
 	GachaResult = "GachaResult",
 	LoadoutResult = "LoadoutResult",
 	InventoryUpdated = "InventoryUpdated",
+	TasksUpdated = "TasksUpdated",
 }
 
 -- Call from the server once, on boot, to create every remote.

@@ -25,8 +25,21 @@ local DEFAULT_JUMPPOWER = 50
 
 local meetingActive = false
 local votes = {} -- player -> targetName ("Skip" for skip)
-local storedSpeeds = {} -- player -> WalkSpeed before freeze (so SpeedBoost isn't clobbered on unfreeze)
+-- player -> WalkSpeed before freeze. Active speed effects are canceled at
+-- meeting start (via the OnMeetingStart hook below), so this only ever holds
+-- un-boosted speeds - which is exactly why the callbacks must run BEFORE
+-- freezeAllPlayers(true) snapshots them.
+local storedSpeeds = {}
 local emergencyMeetingUsed = {} -- player -> true (one emergency call per player per game, for now)
+
+-- Callbacks fired when a meeting starts. Lets other services (e.g.
+-- PowerupService) react to a meeting without MeetingSystem requiring them -
+-- keeps the dependency one-directional and cycle-free.
+local meetingStartCallbacks = {}
+
+function MeetingSystem.OnMeetingStart(callback)
+	table.insert(meetingStartCallbacks, callback)
+end
 
 function MeetingSystem.IsMeetingActive()
 	return meetingActive
@@ -106,6 +119,13 @@ function MeetingSystem.StartMeeting(caller, reason, targetName)
 
 	meetingActive = true
 	votes = {}
+
+	-- Must run BEFORE the freeze: these cancel active speed effects, and the
+	-- freeze needs to snapshot the restored (un-boosted) speeds.
+	for _, callback in ipairs(meetingStartCallbacks) do
+		callback()
+	end
+
 	freezeAllPlayers(true)
 
 	local alivePlayerNames = {}

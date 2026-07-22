@@ -19,6 +19,11 @@ local TaskManager = require(ServerScriptService.Services.TaskManager)
 
 local TAG = "TaskStation"
 
+-- taskId (part name) -> the first part registered under it. Task IDs ARE part
+-- names, so two differently-placed parts sharing a name silently collapse into
+-- one logical task - completing either marks both done.
+local seenParts = {}
+
 local function setupStation(part)
 	local prompt = part:FindFirstChildOfClass("ProximityPrompt")
 	if not prompt then
@@ -26,12 +31,24 @@ local function setupStation(part)
 		return
 	end
 
+	local existing = seenParts[part.Name]
+	if existing and existing ~= part then
+		warn(
+			"Duplicate TaskStation name:", existing:GetFullName(), "and", part:GetFullName(),
+			"- both register as task ID '" .. part.Name .. "' and will act as ONE task (completing either completes both). Rename one."
+		)
+	else
+		seenParts[part.Name] = part
+	end
+
 	TaskManager.RegisterTaskId(part.Name)
 
 	prompt.Triggered:Connect(function(player)
 		local success, reason = TaskManager.CompleteTask(player, part.Name)
 		if success then
-			prompt.Enabled = false -- prevents re-triggering this round
+			-- Prompt stays enabled: assignments are per-player, so disabling it
+			-- here would block every other player assigned this same station.
+			-- TaskManager.CompleteTask rejects repeats/unassigned players anyway.
 			print(player.Name, "completed task:", part.Name, "- remaining:", TaskManager.GetRemainingCount())
 		else
 			warn(player.Name, "failed task", part.Name, "-", reason)

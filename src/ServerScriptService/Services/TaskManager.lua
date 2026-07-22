@@ -7,6 +7,9 @@
 ]]
 
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Remotes = require(ReplicatedStorage.Modules.Remotes)
 
 local TaskManager = {}
 
@@ -18,6 +21,8 @@ local assignments = {}
 
 local TASKS_PER_PLAYER = 3
 
+-- Stations tagged AFTER match start still register here, but they belong to
+-- no one until the next AssignTasks call.
 function TaskManager.RegisterTaskId(taskId)
 	if not table.find(allTaskIds, taskId) then
 		table.insert(allTaskIds, taskId)
@@ -27,6 +32,10 @@ end
 -- Call at match start with the list of crew players.
 function TaskManager.AssignTasks(crewPlayers)
 	assignments = {}
+
+	if #allTaskIds == 0 then
+		warn("[TaskManager] No task stations registered - every crew player gets 0 tasks, so GetRemainingCount() reads 0 and the crew task win condition counts as already complete.")
+	end
 
 	for _, player in ipairs(crewPlayers) do
 		local shuffled = table.clone(allTaskIds)
@@ -40,6 +49,10 @@ function TaskManager.AssignTasks(crewPlayers)
 			assigned[shuffled[i]] = false
 		end
 		assignments[player] = assigned
+
+		local tasksEvent = Remotes.Get(Remotes.Names.TasksUpdated)
+		-- Only ever send a player their OWN task list
+		tasksEvent:FireClient(player, assigned)
 	end
 end
 
@@ -58,6 +71,10 @@ function TaskManager.CompleteTask(player, taskId)
 	end
 
 	playerTasks[taskId] = true
+
+	local tasksEvent = Remotes.Get(Remotes.Names.TasksUpdated)
+	tasksEvent:FireClient(player, playerTasks)
+
 	return true
 end
 

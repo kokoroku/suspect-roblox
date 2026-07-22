@@ -1,0 +1,117 @@
+--[[
+	TaskListUI.client.lua
+	Minimal task checklist HUD, built entirely in code (no manually placed
+	Studio GUI objects) so it stays version-controlled. Not styled/polished
+	yet - that's a later art pass, this just needs to work.
+
+	UI lifecycle:
+	  - Driven entirely by the TasksUpdated remote: the server sends this
+	    player their OWN { [taskId] = done } table at match start and again
+	    after every completion. The list is rebuilt from scratch each time.
+	  - Impostors are never sent the event, so they never see this GUI -
+	    that IS the visibility mechanism, there is no client-side role check.
+	  - Stays visible during meetings and after death - fine for now.
+]]
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local Remotes = require(ReplicatedStorage.Modules.Remotes)
+local tasksUpdatedEvent = Remotes.Get(Remotes.Names.TasksUpdated)
+
+local localPlayer = Players.LocalPlayer
+local playerGui = localPlayer:WaitForChild("PlayerGui")
+
+local DONE_COLOR = Color3.fromRGB(120, 220, 120)
+
+-- ============================================================
+-- Build the GUI once. It stays disabled until this player is actually
+-- assigned at least one task.
+-- ============================================================
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "TaskListGui"
+screenGui.ResetOnSpawn = false
+screenGui.Enabled = false
+screenGui.Parent = playerGui
+
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 220, 0, 0)
+frame.AutomaticSize = Enum.AutomaticSize.Y
+frame.Position = UDim2.new(0, 10, 0, 10)
+frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+frame.BackgroundTransparency = 0.2
+frame.Parent = screenGui
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundTransparency = 1
+title.TextColor3 = Color3.new(1, 1, 1)
+title.TextScaled = true
+title.Font = Enum.Font.GothamBold
+title.Text = "Tasks (0/0)"
+title.Parent = frame
+
+local taskHolder = Instance.new("Frame")
+taskHolder.Size = UDim2.new(1, 0, 0, 0)
+taskHolder.Position = UDim2.new(0, 0, 0, 30)
+taskHolder.AutomaticSize = Enum.AutomaticSize.Y
+taskHolder.BackgroundTransparency = 1
+taskHolder.Parent = frame
+
+local listLayout = Instance.new("UIListLayout")
+listLayout.Padding = UDim.new(0, 2)
+listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+listLayout.Parent = taskHolder
+
+local function clearTaskLabels()
+	for _, child in ipairs(taskHolder:GetChildren()) do
+		if child:IsA("TextLabel") then
+			child:Destroy()
+		end
+	end
+end
+
+-- Task IDs are raw part names (e.g. "Task_Wiring_1"). Only ever shown
+-- through this - the raw ID stays internal, used as the sort key.
+local function displayName(taskId)
+	local trimmed = taskId:gsub("^Task_", "")
+	return (trimmed:gsub("_", " "))
+end
+
+local function makeTaskLabel(taskId, done, layoutOrder)
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, 0, 0, 24)
+	label.LayoutOrder = layoutOrder
+	label.BackgroundTransparency = 1
+	label.TextColor3 = done and DONE_COLOR or Color3.new(1, 1, 1)
+	label.TextScaled = true
+	label.Font = Enum.Font.Gotham
+	label.Text = (done and "\u{2713} " or "\u{2022} ") .. displayName(taskId)
+	label.Parent = taskHolder
+end
+
+-- ============================================================
+-- Task list updates
+-- ============================================================
+tasksUpdatedEvent.OnClientEvent:Connect(function(tasks)
+	clearTaskLabels()
+
+	-- Sort by raw task ID so the list order never jumps between updates.
+	local taskIds = {}
+	for taskId in pairs(tasks) do
+		table.insert(taskIds, taskId)
+	end
+	table.sort(taskIds)
+
+	local doneCount = 0
+	for index, taskId in ipairs(taskIds) do
+		local done = tasks[taskId] == true
+		if done then
+			doneCount += 1
+		end
+		makeTaskLabel(taskId, done, index)
+	end
+
+	title.Text = string.format("Tasks (%d/%d)", doneCount, #taskIds)
+	screenGui.Enabled = #taskIds > 0
+end)

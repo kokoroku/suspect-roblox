@@ -17,6 +17,10 @@ local ServerScriptService = game:GetService("ServerScriptService")
 
 local PowerupOwnershipService = require(ServerScriptService.Services.PowerupOwnershipService)
 local LoadoutService = require(ServerScriptService.Services.LoadoutService)
+-- Cycle-safe: MeetingSystem requires only RoleManager/TaskManager/Remotes and
+-- never requires PowerupService - which is exactly why it exposes an
+-- OnMeetingStart hook instead of calling into this module directly.
+local MeetingSystem = require(ServerScriptService.Services.MeetingSystem)
 
 local PowerupService = {}
 
@@ -68,6 +72,28 @@ local BASE_COOLDOWN_SECONDS = 20
 -- player -> { [powerupId] = cooldownUntil }
 local cooldowns = {}
 
+-- player -> { originalSpeed = number } for the currently active SpeedBoost.
+-- The entry table's identity is the boost's "token": a canceled boost's
+-- still-pending task.delay sees a different (or nil) entry and no-ops.
+local activeSpeedBoosts = {}
+
+-- Ends a player's active SpeedBoost early, restoring their pre-boost speed.
+local function cancelSpeedBoost(player)
+	local entry = activeSpeedBoosts[player]
+	if not entry then
+		return
+	end
+	activeSpeedBoosts[player] = nil -- clear first so the pending timer no-ops
+
+	-- Re-fetch the humanoid: the character may have been replaced since the
+	-- boost started, so a stale reference could write to a dead rig.
+	local character = player.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		humanoid.WalkSpeed = entry.originalSpeed
+	end
+end
+
 -- Returns the odds table for a powerup, e.g. for gacha UI disclosure.
 -- { {variant="Common", percent=60}, ... }
 function PowerupService.GetOdds(powerupId)
@@ -94,6 +120,10 @@ end
 -- Server-side handler for the UsePowerup RemoteEvent.
 -- Returns true/false, and a reason string on failure.
 function PowerupService.TryUse(player, powerupId)
+	if MeetingSystem.IsMeetingActive() then
+		return false, "MeetingActive"
+	end
+
 	if not LoadoutService.HasEquipped(player, powerupId) then
 		return false, "NotEquipped"
 	end
@@ -120,11 +150,20 @@ function PowerupService.TryUse(player, powerupId)
 			local character = player.Character
 			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
 			if not humanoid then return end
-			local originalSpeed = humanoid.WalkSpeed
-			humanoid.WalkSpeed = originalSpeed * stats.speedMultiplier
+
+			local entry = { originalSpeed = humanoid.WalkSpeed }
+			activeSpeedBoosts[player] = entry
+			humanoid.WalkSpeed = entry.originalSpeed * stats.speedMultiplier
+
 			task.delay(stats.duration, function()
+				-- Identity check: if the boost was canceled (or replaced), this
+				-- timer belongs to a dead entry and must do nothing.
+				if activeSpeedBoosts[player] ~= entry then
+					return
+				end
+				activeSpeedBoosts[player] = nil
 				if humanoid and humanoid.Parent then
-					humanoid.WalkSpeed = originalSpeed
+					humanoid.WalkSpeed = entry.originalSpeed
 				end
 			end)
 		end,
@@ -140,8 +179,25 @@ function PowerupService.TryUse(player, powerupId)
 	return true
 end
 
+-- Cancel every active speed effect the moment a meeting starts, so the
+-- meeting freeze snapshots un-boosted speeds and no pending boost timer can
+-- fire mid-vote. Boosts are canceled, not paused/resumed: every duration
+-- (max 10s) is shorter than a meeting (20s), so both are identical after the
+-- meeting - cancel is just the clean-state version.
+MeetingSystem.OnMeetingStart(function()
+	-- Snapshot the keys first - cancelSpeedBoost mutates activeSpeedBoosts.
+	local boostedPlayers = {}
+	for player in pairs(activeSpeedBoosts) do
+		table.insert(boostedPlayers, player)
+	end
+	for _, player in ipairs(boostedPlayers) do
+		cancelSpeedBoost(player)
+	end
+end)
+
 Players.PlayerRemoving:Connect(function(player)
 	cooldowns[player] = nil
+	activeSpeedBoosts[player] = nil
 end)
 
 return PowerupService

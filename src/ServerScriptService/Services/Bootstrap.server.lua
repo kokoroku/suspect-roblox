@@ -30,6 +30,11 @@ local MeetingSystem = require(script.Parent.MeetingSystem)
 -- ============================================================
 local DEBUG_ALL_IMPOSTORS = true
 
+-- Seconds to wait after the first player joins before starting the match,
+-- so anyone joining alongside them is included in role/task assignment.
+local MATCH_START_GRACE = 5
+local matchStarted = false
+
 -- ============================================================
 -- Manual respawn control. Roblox auto-respawns characters a few seconds
 -- after death by default - that's what was undoing your kills/ejections.
@@ -105,19 +110,34 @@ end)
 -- TEMP task/role assignment for solo testing. Real match-start flow
 -- (lobby -> round begins -> assign roles + tasks together, spawn all
 -- players fresh) replaces this block once a proper round-reset flow exists.
+--
+-- TEMPORARY: this whole block is a minimal one-shot match start standing in
+-- for the real lobby/round-reset flow. The match starts once, MATCH_START_GRACE
+-- seconds after the first player joins, and never restarts. Players who join
+-- after that just spawn with no role - RoleManager returns nil/false for them,
+-- so KillSystem's guards mean they can't kill or be killed.
 -- ============================================================
 Players.PlayerAdded:Connect(function(player)
 	player:SetAttribute("Currency", 500)
 	player:LoadCharacter() -- manual spawn, required now that CharacterAutoLoads is false
 
-	task.wait(1)
-	TaskManager.AssignTasks(Players:GetPlayers())
-
-	if DEBUG_ALL_IMPOSTORS then
-		RoleManager.DebugForceAllImpostor(Players:GetPlayers())
-	else
-		RoleManager.AssignRoles(Players:GetPlayers())
+	if matchStarted then
+		return -- match already running; latecomers spawn roleless until real rounds exist
 	end
+	matchStarted = true
+
+	task.delay(MATCH_START_GRACE, function()
+		-- Roles FIRST, then tasks - AssignTasks must only ever see crew, or
+		-- impostors inflate GetRemainingCount() and the crew win check breaks.
+		if DEBUG_ALL_IMPOSTORS then
+			RoleManager.DebugForceAllImpostor(Players:GetPlayers())
+		else
+			RoleManager.AssignRoles(Players:GetPlayers())
+		end
+
+		-- In debug all-impostor mode this list is empty, so no tasks - expected.
+		TaskManager.AssignTasks(RoleManager.GetAllCrew())
+	end)
 end)
 
 print("[Suspect] Services initialized.")
