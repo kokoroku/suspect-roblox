@@ -75,7 +75,7 @@ local function rollVariant(powerupId, forceRareOrBetter)
 end
 
 -- Main entry point: called from the RollGacha RemoteEvent handler.
--- Returns (success: bool, resultOrError: string, variant: string?, wasUpgrade: bool?)
+-- Returns (success: bool, resultOrError: string, variant: string?, rollStatus: "New"|"Upgraded"|"Duplicate"|nil)
 function GachaService.Roll(player, powerupId)
 	if not PowerupService.Definitions[powerupId] then
 		return false, "UnknownPowerup"
@@ -94,9 +94,9 @@ function GachaService.Roll(player, powerupId)
 		pityCounter[player] = 0
 	end
 
-	local wasUpgradeOrNew = PowerupOwnershipService.GrantOrUpgrade(player, powerupId, variant)
+	local rollStatus = PowerupOwnershipService.GrantOrUpgrade(player, powerupId, variant)
 
-	return true, "Success", variant, wasUpgradeOrNew
+	return true, "Success", variant, rollStatus
 end
 
 -- Used by the lobby UI to show odds + current pity progress before rolling.
@@ -106,6 +106,37 @@ function GachaService.GetDisclosure(player, powerupId)
 		cost = ROLL_COST,
 		pityRollsUsed = pityCounter[player] or 0,
 		pityThreshold = PITY_THRESHOLD,
+	}
+end
+
+-- One-call snapshot for the client gacha UI: cost, this player's pity progress,
+-- and every powerup with its odds + which variant this player already owns.
+-- Read-only, no side effects - safe for any client to call at any time.
+function GachaService.GetCatalog(player)
+	-- pairs order is nondeterministic - sort ids so the UI never reorders.
+	local ids = {}
+	for id in pairs(PowerupService.Definitions) do
+		table.insert(ids, id)
+	end
+	table.sort(ids)
+
+	local powerups = {}
+	for _, id in ipairs(ids) do
+		local def = PowerupService.Definitions[id]
+		table.insert(powerups, {
+			id = id,
+			displayName = def.displayName,
+			team = def.team,
+			odds = PowerupService.GetOdds(id),
+			ownedVariant = PowerupOwnershipService.GetOwnedVariant(player, id),
+		})
+	end
+
+	return {
+		cost = ROLL_COST,
+		pityRollsUsed = pityCounter[player] or 0,
+		pityThreshold = PITY_THRESHOLD,
+		powerups = powerups,
 	}
 end
 

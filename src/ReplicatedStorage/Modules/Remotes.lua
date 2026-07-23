@@ -30,6 +30,13 @@ Remotes.Names = {
 	LoadoutResult = "LoadoutResult",
 	InventoryUpdated = "InventoryUpdated",
 	TasksUpdated = "TasksUpdated",
+	SpectateTargetsUpdated = "SpectateTargetsUpdated",
+}
+
+-- RemoteFunctions (client invokes, server answers) - a request/response pair,
+-- unlike the fire-and-forget RemoteEvents above.
+Remotes.FunctionNames = {
+	GetGachaCatalog = "GetGachaCatalog",
 }
 
 -- Call from the server once, on boot, to create every remote.
@@ -46,6 +53,14 @@ function Remotes.CreateAll()
 			local remote = Instance.new("RemoteEvent")
 			remote.Name = name
 			remote.Parent = folder
+		end
+	end
+
+	for _, name in pairs(Remotes.FunctionNames) do
+		if not folder:FindFirstChild(name) then
+			local remoteFunction = Instance.new("RemoteFunction")
+			remoteFunction.Name = name
+			remoteFunction.Parent = folder
 		end
 	end
 

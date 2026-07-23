@@ -15,7 +15,8 @@ local Debris = game:GetService("Debris")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
 local RoleManager = require(ServerScriptService.Services.RoleManager)
-local TaskManager = require(ServerScriptService.Services.TaskManager)
+local MatchService = require(ServerScriptService.Services.MatchService)
+local DebugFlags = require(ServerScriptService.Services.DebugFlags)
 
 local KillSystem = {}
 
@@ -144,6 +145,10 @@ end
 -- Called from the AttemptKill RemoteEvent handler.
 -- Returns true/false, and a reason string on failure.
 function KillSystem.AttemptKill(killer, target)
+	if MatchService.GetState() ~= "InProgress" then
+		return false, "MatchNotInProgress"
+	end
+
 	if not target or killer == target then
 		return false, "InvalidTarget"
 	end
@@ -160,7 +165,7 @@ function KillSystem.AttemptKill(killer, target)
 		return false, "TargetAlreadyDead"
 	end
 
-	if RoleManager.GetRole(target) == "Impostor" and not RoleManager.IsDebugAllImpostorMode() then
+	if RoleManager.GetRole(target) == "Impostor" and not DebugFlags.ALL_IMPOSTORS then
 		return false, "CannotKillImpostor"
 	end
 
@@ -176,18 +181,17 @@ function KillSystem.AttemptKill(killer, target)
 	turnIntoBody(target)
 	killCooldowns[killer] = os.clock() + KILL_COOLDOWN_SECONDS
 
-	-- TODO: once MeetingSystem/round-flow exists, replace this print with
-	-- actually ending the round and showing results to all players.
-	local winner = RoleManager.CheckWinCondition(TaskManager.GetRemainingCount())
-	if winner then
-		print("[KillSystem] Win condition reached:", winner)
-	end
+	MatchService.EvaluateWinCondition("Kill")
 
 	return true
 end
 
 Players.PlayerRemoving:Connect(function(player)
 	killCooldowns[player] = nil
+end)
+
+MatchService.OnMatchStart(function()
+	killCooldowns = {}
 end)
 
 return KillSystem

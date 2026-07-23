@@ -16,6 +16,8 @@ local CollectionService = game:GetService("CollectionService")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local TaskManager = require(ServerScriptService.Services.TaskManager)
+local MeetingSystem = require(ServerScriptService.Services.MeetingSystem)
+local MatchService = require(ServerScriptService.Services.MatchService)
 
 local TAG = "TaskStation"
 
@@ -44,6 +46,14 @@ local function setupStation(part)
 	TaskManager.RegisterTaskId(part.Name)
 
 	prompt.Triggered:Connect(function(player)
+		-- Prompts stay physically visible; this is the server-side gate stopping
+		-- task completion during meetings (players frozen at a station can still
+		-- hold E) and during the end screen.
+		if MatchService.GetState() ~= "InProgress" or MeetingSystem.IsMeetingActive() then
+			warn(player.Name, "tried to complete a task while not in an active match/meeting-free round")
+			return
+		end
+
 		local success, reason = TaskManager.CompleteTask(player, part.Name)
 		if success then
 			-- Prompt stays enabled: assignments are per-player, so disabling it

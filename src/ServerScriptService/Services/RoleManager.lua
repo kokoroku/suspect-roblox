@@ -8,21 +8,27 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
+local DebugFlags = require(ServerScriptService.Services.DebugFlags)
 
 local RoleManager = {}
 
 -- player -> { role = "Crewmate" | "Impostor", alive = bool }
 local playerState = {}
 
--- True only while RoleManager.DebugForceAllImpostor is active. KillSystem
--- checks this to skip the "impostors can't kill impostors" rule during
--- that specific test mode - that rule is correct for real games, it just
--- can't apply when everyone is deliberately Impostor for testing.
-local debugAllImpostorMode = false
-
 local IMPOSTOR_RATIO = 1 / 6 -- ~1 impostor per 6 players, tune later
+
+-- Callbacks fired when a player's alive-state actually changes (not on fresh
+-- AssignRoles construction). Lets other services (e.g. SpectateService) react
+-- to deaths without RoleManager requiring them - keeps the dependency
+-- one-directional and cycle-free.
+local aliveChangedCallbacks = {}
+
+function RoleManager.OnAliveChanged(callback)
+	table.insert(aliveChangedCallbacks, callback)
+end
 
 function RoleManager.GetRole(player)
 	local state = playerState[player]
@@ -36,8 +42,11 @@ end
 
 function RoleManager.SetAlive(player, alive)
 	local state = playerState[player]
-	if state then
+	if state and state.alive ~= alive then
 		state.alive = alive
+		for _, callback in ipairs(aliveChangedCallbacks) do
+			callback(player, alive)
+		end
 	end
 end
 
@@ -61,16 +70,12 @@ function RoleManager.GetAllCrew()
 	return crew
 end
 
-function RoleManager.IsDebugAllImpostorMode()
-	return debugAllImpostorMode
-end
-
 -- Call this at the start of a match with the list of players in the round.
 function RoleManager.AssignRoles(playersInMatch)
 	playerState = {}
-	debugAllImpostorMode = false
 
-	local impostorCount = math.max(1, math.floor(#playersInMatch * IMPOSTOR_RATIO + 0.5))
+	-- In debug all-impostor mode everyone is an impostor; otherwise ratio-based.
+	local impostorCount = DebugFlags.ALL_IMPOSTORS and #playersInMatch or math.max(1, math.floor(#playersInMatch * IMPOSTOR_RATIO + 0.5))
 	local shuffled = table.clone(playersInMatch)
 
 	-- Fisher-Yates shuffle so impostor picks are unbiased
@@ -89,23 +94,10 @@ function RoleManager.AssignRoles(playersInMatch)
 	end
 end
 
--- TESTING ONLY - forces every given player to Impostor, alive. Useful for
--- exercising kill/meeting flow with more than 1 impostor before real
--- matchmaking exists. Flip DEBUG_ALL_IMPOSTORS off in Bootstrap to go
--- back to normal ratio-based assignment - don't ship with this active.
-function RoleManager.DebugForceAllImpostor(playersInMatch)
-	playerState = {}
-	debugAllImpostorMode = false
-
-	for _, player in ipairs(playersInMatch) do
-		playerState[player] = { role = "Impostor", alive = true }
-		local roleEvent = Remotes.Get(Remotes.Names.RoleAssigned)
-		roleEvent:FireClient(player, "Impostor")
-	end
-end
-
 -- Returns "CrewWin", "ImpostorWin", or nil if the match should continue.
-function RoleManager.CheckWinCondition(tasksRemaining)
+-- includeParity: when false, the impostors >= crew parity win is skipped (used
+-- for task-completion checks, which can't change alive counts - see MatchService).
+function RoleManager.CheckWinCondition(tasksRemaining, includeParity)
 	local aliveImpostors, aliveCrew = 0, 0
 	for _, state in pairs(playerState) do
 		if state.alive then
@@ -119,7 +111,7 @@ function RoleManager.CheckWinCondition(tasksRemaining)
 
 	if aliveImpostors == 0 then
 		return "CrewWin"
-	elseif aliveImpostors >= aliveCrew then
+	elseif includeParity and aliveImpostors >= aliveCrew then
 		return "ImpostorWin"
 	elseif tasksRemaining ~= nil and tasksRemaining <= 0 then
 		return "CrewWin"

@@ -19,21 +19,21 @@ local PowerupService = require(script.Parent.PowerupService)
 local PowerupOwnershipService = require(script.Parent.PowerupOwnershipService)
 local LoadoutService = require(script.Parent.LoadoutService)
 local GachaService = require(script.Parent.GachaService)
-local RoleManager = require(script.Parent.RoleManager)
-local TaskManager = require(script.Parent.TaskManager)
 local KillSystem = require(script.Parent.KillSystem)
 local MeetingSystem = require(script.Parent.MeetingSystem)
+local MatchService = require(script.Parent.MatchService)
+local DebugFlags = require(script.Parent.DebugFlags)
+-- Side-effect service: requiring it is what activates its dead-player broadcasts.
+local SpectateService = require(script.Parent.SpectateService)
 
--- ============================================================
--- TESTING TOGGLE - set to false to go back to normal 1-impostor ratio.
--- Do not ship with this set to true.
--- ============================================================
-local DEBUG_ALL_IMPOSTORS = true
+if DebugFlags.ALL_IMPOSTORS then
+	warn("[Suspect] DEBUG MODE: ALL_IMPOSTORS is ON (DebugFlags.lua) - everyone will be an impostor. Do not ship.")
+end
 
 -- Seconds to wait after the first player joins before starting the match,
 -- so anyone joining alongside them is included in role/task assignment.
 local MATCH_START_GRACE = 5
-local matchStarted = false
+local firstMatchScheduled = false
 
 -- ============================================================
 -- Manual respawn control. Roblox auto-respawns characters a few seconds
@@ -58,9 +58,16 @@ end)
 -- RollGacha
 -- ============================================================
 Remotes.Get(Remotes.Names.RollGacha).OnServerEvent:Connect(function(player, powerupId)
-	local success, result, variant = GachaService.Roll(player, powerupId)
-	Remotes.Get(Remotes.Names.GachaResult):FireClient(player, success, result, variant)
+	local success, result, variant, rollStatus = GachaService.Roll(player, powerupId)
+	Remotes.Get(Remotes.Names.GachaResult):FireClient(player, success, result, variant, rollStatus)
 end)
+
+-- ============================================================
+-- GetGachaCatalog (RemoteFunction) - client asks for the full gacha snapshot
+-- ============================================================
+Remotes.Get(Remotes.FunctionNames.GetGachaCatalog).OnServerInvoke = function(player)
+	return GachaService.GetCatalog(player)
+end
 
 -- ============================================================
 -- SetLoadout - client sends a list of up to 2 powerup IDs they own
@@ -106,38 +113,26 @@ Remotes.Get(Remotes.Names.CastVote).OnServerEvent:Connect(function(player, targe
 end)
 
 -- ============================================================
--- Player join: manual spawn (since CharacterAutoLoads is off), then
--- TEMP task/role assignment for solo testing. Real match-start flow
--- (lobby -> round begins -> assign roles + tasks together, spawn all
--- players fresh) replaces this block once a proper round-reset flow exists.
+-- Player join: manual spawn (since CharacterAutoLoads is off). Bootstrap only
+-- decides WHEN the FIRST match starts - MATCH_START_GRACE seconds after the
+-- first player joins - and then hands off to MatchService, which owns role/task
+-- assignment and every restart afterward (self-scheduled by MatchService.EndMatch).
 --
--- TEMPORARY: this whole block is a minimal one-shot match start standing in
--- for the real lobby/round-reset flow. The match starts once, MATCH_START_GRACE
--- seconds after the first player joins, and never restarts. Players who join
--- after that just spawn with no role - RoleManager returns nil/false for them,
--- so KillSystem's guards mean they can't kill or be killed.
+-- TEMPORARY: this one-shot first-match trigger stands in for the real
+-- lobby/round-begin flow. Late joiners mid-match still spawn roleless until the
+-- next round - RoleManager returns nil/false for them, so KillSystem's guards
+-- mean they can't kill or be killed. Still acceptable for now.
 -- ============================================================
 Players.PlayerAdded:Connect(function(player)
 	player:SetAttribute("Currency", 500)
 	player:LoadCharacter() -- manual spawn, required now that CharacterAutoLoads is false
 
-	if matchStarted then
-		return -- match already running; latecomers spawn roleless until real rounds exist
+	if firstMatchScheduled then
+		return -- first match already scheduled/running; latecomers spawn roleless until the next round
 	end
-	matchStarted = true
+	firstMatchScheduled = true
 
-	task.delay(MATCH_START_GRACE, function()
-		-- Roles FIRST, then tasks - AssignTasks must only ever see crew, or
-		-- impostors inflate GetRemainingCount() and the crew win check breaks.
-		if DEBUG_ALL_IMPOSTORS then
-			RoleManager.DebugForceAllImpostor(Players:GetPlayers())
-		else
-			RoleManager.AssignRoles(Players:GetPlayers())
-		end
-
-		-- In debug all-impostor mode this list is empty, so no tasks - expected.
-		TaskManager.AssignTasks(RoleManager.GetAllCrew())
-	end)
+	task.delay(MATCH_START_GRACE, MatchService.StartMatch)
 end)
 
 print("[Suspect] Services initialized.")

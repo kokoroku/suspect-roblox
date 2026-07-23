@@ -21,6 +21,15 @@ local assignments = {}
 
 local TASKS_PER_PLAYER = 3
 
+-- Callbacks fired whenever a task is completed. Lets MatchService re-check the
+-- win condition on task completion without TaskManager requiring it - keeps the
+-- dependency one-directional and cycle-free.
+local taskCompletedCallbacks = {}
+
+function TaskManager.OnTaskCompleted(callback)
+	table.insert(taskCompletedCallbacks, callback)
+end
+
 -- Stations tagged AFTER match start still register here, but they belong to
 -- no one until the next AssignTasks call.
 function TaskManager.RegisterTaskId(taskId)
@@ -75,6 +84,10 @@ function TaskManager.CompleteTask(player, taskId)
 	local tasksEvent = Remotes.Get(Remotes.Names.TasksUpdated)
 	tasksEvent:FireClient(player, playerTasks)
 
+	for _, callback in ipairs(taskCompletedCallbacks) do
+		callback()
+	end
+
 	return true
 end
 
@@ -89,6 +102,17 @@ function TaskManager.GetRemainingCount()
 		end
 	end
 	return remaining
+end
+
+-- Total number of assigned tasks across all players, regardless of done state.
+function TaskManager.GetTotalCount()
+	local total = 0
+	for _, playerTasks in pairs(assignments) do
+		for _ in pairs(playerTasks) do
+			total += 1
+		end
+	end
+	return total
 end
 
 Players.PlayerRemoving:Connect(function(player)

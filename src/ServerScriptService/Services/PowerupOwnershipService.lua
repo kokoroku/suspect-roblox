@@ -19,16 +19,23 @@ local RARITY_RANK = { Common = 1, Rare = 2, Epic = 3 }
 -- player -> { [powerupId] = "Common" | "Rare" | "Epic" }
 local owned = {}
 
+-- Returns (status, variant) where status is one of:
+--   "New"      - the player did not own this powerup; variant is what was granted
+--   "Upgraded" - owned a lower rarity; variant is the new (higher) variant
+--   "Duplicate"- already owned this or better; variant is the unchanged current one
 function PowerupOwnershipService.GrantOrUpgrade(player, powerupId, variant)
 	owned[player] = owned[player] or {}
 	local current = owned[player][powerupId]
 
-	if not current or RARITY_RANK[variant] > RARITY_RANK[current] then
+	if not current then
 		owned[player][powerupId] = variant
-		return true, variant -- new or upgraded
+		return "New", variant
+	elseif RARITY_RANK[variant] > RARITY_RANK[current] then
+		owned[player][powerupId] = variant
+		return "Upgraded", variant
 	end
 
-	return false, current -- no change, already own this or better
+	return "Duplicate", current -- already own this or better
 end
 
 function PowerupOwnershipService.GetOwnedVariant(player, powerupId)

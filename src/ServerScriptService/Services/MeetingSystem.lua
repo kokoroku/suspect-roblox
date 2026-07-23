@@ -12,7 +12,7 @@ local CollectionService = game:GetService("CollectionService")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
 local RoleManager = require(ServerScriptService.Services.RoleManager)
-local TaskManager = require(ServerScriptService.Services.TaskManager)
+local MatchService = require(ServerScriptService.Services.MatchService)
 
 local MeetingSystem = {}
 
@@ -102,6 +102,10 @@ end
 -- reason: "Emergency" or "ReportBody". targetName: victim's name if ReportBody.
 -- Returns true/false, and a reason string on failure.
 function MeetingSystem.StartMeeting(caller, reason, targetName)
+	if MatchService.GetState() ~= "InProgress" then
+		return false, "MatchNotInProgress"
+	end
+
 	if meetingActive then
 		return false, "MeetingAlreadyActive"
 	end
@@ -229,18 +233,23 @@ function MeetingSystem.ResolveMeeting()
 		ejectedRole
 	)
 
-	-- TODO: once full round-reset flow exists, fire MatchEnded to clients
-	-- here instead of just printing.
-	local winner = RoleManager.CheckWinCondition(TaskManager.GetRemainingCount())
-	if winner then
-		print("[MeetingSystem] Win condition reached:", winner)
-	end
+	MatchService.EvaluateWinCondition("MeetingResolved")
 end
 
 Players.PlayerRemoving:Connect(function(player)
 	votes[player] = nil
 	storedSpeeds[player] = nil
 	emergencyMeetingUsed[player] = nil
+end)
+
+MatchService.OnMatchStart(function()
+	-- Reset meeting state for the new round. Bodies from a kill-win would
+	-- otherwise survive into the next round, since meeting-end cleanup never ran.
+	meetingActive = false
+	votes = {}
+	storedSpeeds = {}
+	emergencyMeetingUsed = {}
+	clearAllBodies()
 end)
 
 return MeetingSystem
