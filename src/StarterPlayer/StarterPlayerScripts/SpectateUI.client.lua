@@ -25,6 +25,8 @@ local spectateTargetsEvent = Remotes.Get(Remotes.Names.SpectateTargetsUpdated)
 local playerDiedEvent = Remotes.Get(Remotes.Names.PlayerDied)
 local rollGachaEvent = Remotes.Get(Remotes.Names.RollGacha)
 local gachaResultEvent = Remotes.Get(Remotes.Names.GachaResult)
+local upgradePowerupEvent = Remotes.Get(Remotes.Names.UpgradePowerup)
+local upgradeResultEvent = Remotes.Get(Remotes.Names.UpgradeResult)
 local getGachaCatalogFn = Remotes.Get(Remotes.FunctionNames.GetGachaCatalog)
 
 local localPlayer = Players.LocalPlayer
@@ -137,9 +139,24 @@ pityLabel.TextXAlignment = Enum.TextXAlignment.Left
 pityLabel.Text = "Pity: 0/0"
 pityLabel.Parent = gachaPanel
 
+-- One roll button up top - the roll decides WHICH powerup you get.
+local rollButton = Instance.new("TextButton")
+rollButton.Size = UDim2.new(0, 150, 0, 26)
+rollButton.Position = UDim2.new(0, 5, 0, 58)
+rollButton.BackgroundColor3 = Color3.fromRGB(70, 90, 70)
+rollButton.TextColor3 = Color3.new(1, 1, 1)
+rollButton.Font = Enum.Font.GothamBold
+rollButton.TextScaled = true
+rollButton.Text = "Roll (50)"
+rollButton.Parent = gachaPanel
+
+rollButton.MouseButton1Click:Connect(function()
+	rollGachaEvent:FireServer() -- no payload; server picks the powerup
+end)
+
 local rowHolder = Instance.new("ScrollingFrame")
-rowHolder.Size = UDim2.new(1, -10, 1, -105)
-rowHolder.Position = UDim2.new(0, 5, 0, 60)
+rowHolder.Size = UDim2.new(1, -10, 1, -135)
+rowHolder.Position = UDim2.new(0, 5, 0, 90)
 rowHolder.BackgroundTransparency = 1
 rowHolder.BorderSizePixel = 0
 rowHolder.CanvasSize = UDim2.new(0, 0, 0, 0)
@@ -180,26 +197,16 @@ local function clearRows()
 	end
 end
 
--- Display order follows RARITY, not weight, so a future re-weighted banner
--- still reads Common -> Rare -> Epic. GetOdds builds the array from a
--- nondeterministic pairs loop, so we always re-sort here.
-local RARITY_ORDER = { Common = 1, Rare = 2, Epic = 3 }
-local function oddsToText(odds)
-	local sorted = table.clone(odds)
-	table.sort(sorted, function(a, b)
-		local ra = RARITY_ORDER[a.variant] or math.huge -- unknown variants sort last
-		local rb = RARITY_ORDER[b.variant] or math.huge
-		if ra ~= rb then
-			return ra < rb
-		end
-		return a.percent > b.percent -- tie-break by percent descending
-	end)
-	local parts = {}
-	for _, entry in ipairs(sorted) do
-		table.insert(parts, entry.variant .. " " .. tostring(entry.percent) .. "%")
-	end
-	return table.concat(parts, " / ")
-end
+local RARITY_COLOR = {
+	Common = Color3.fromRGB(180, 180, 180),
+	Rare = Color3.fromRGB(80, 140, 220),
+	Epic = Color3.fromRGB(170, 90, 220),
+}
+
+-- Last catalog keyed by powerup id, so the result handlers can resolve a
+-- displayName/rarity from just an id. (The catalog is already sorted by the
+-- server, so no client-side sorting is needed any more.)
+local catalogById = {}
 
 local function refreshCatalog()
 	local catalog = getGachaCatalogFn:InvokeServer()
@@ -209,11 +216,15 @@ local function refreshCatalog()
 
 	refreshCurrencyLabel()
 	pityLabel.Text = "Pity: " .. tostring(catalog.pityRollsUsed) .. "/" .. tostring(catalog.pityThreshold)
+	rollButton.Text = "Roll (" .. tostring(catalog.cost) .. ")"
 
+	catalogById = {}
 	clearRows()
 	for i, entry in ipairs(catalog.powerups) do
+		catalogById[entry.id] = entry
+
 		local row = Instance.new("Frame")
-		row.Size = UDim2.new(1, -6, 0, 92)
+		row.Size = UDim2.new(1, -6, 0, 72)
 		row.LayoutOrder = i
 		row.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
 		row.Parent = rowHolder
@@ -222,48 +233,45 @@ local function refreshCatalog()
 		nameLabel.Size = UDim2.new(1, -10, 0, 22)
 		nameLabel.Position = UDim2.new(0, 5, 0, 3)
 		nameLabel.BackgroundTransparency = 1
-		nameLabel.TextColor3 = Color3.new(1, 1, 1)
+		nameLabel.TextColor3 = RARITY_COLOR[entry.rarity] or Color3.new(1, 1, 1)
 		nameLabel.Font = Enum.Font.GothamBold
 		nameLabel.TextScaled = true
 		nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-		nameLabel.Text = entry.displayName .. "  [" .. tostring(entry.team) .. "]"
+		nameLabel.Text = entry.displayName .. "   " .. tostring(entry.percent) .. "%"
 		nameLabel.Parent = row
 
 		local ownedLabel = Instance.new("TextLabel")
 		ownedLabel.Size = UDim2.new(1, -10, 0, 18)
-		ownedLabel.Position = UDim2.new(0, 5, 0, 26)
+		ownedLabel.Position = UDim2.new(0, 5, 0, 27)
 		ownedLabel.BackgroundTransparency = 1
 		ownedLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
 		ownedLabel.Font = Enum.Font.Gotham
 		ownedLabel.TextScaled = true
 		ownedLabel.TextXAlignment = Enum.TextXAlignment.Left
-		ownedLabel.Text = entry.ownedVariant and ("Owned: " .. entry.ownedVariant) or "Not owned"
+		if entry.tier then
+			ownedLabel.Text = "Tier " .. tostring(entry.tier)
+				.. " - Dupes " .. tostring(entry.duplicates) .. "/" .. tostring(entry.duplicatesNeeded)
+		else
+			ownedLabel.Text = "Not owned"
+		end
 		ownedLabel.Parent = row
 
-		local oddsLabel = Instance.new("TextLabel")
-		oddsLabel.Size = UDim2.new(1, -10, 0, 18)
-		oddsLabel.Position = UDim2.new(0, 5, 0, 45)
-		oddsLabel.BackgroundTransparency = 1
-		oddsLabel.TextColor3 = Color3.fromRGB(170, 170, 170)
-		oddsLabel.Font = Enum.Font.Gotham
-		oddsLabel.TextScaled = true
-		oddsLabel.TextXAlignment = Enum.TextXAlignment.Left
-		oddsLabel.Text = oddsToText(entry.odds)
-		oddsLabel.Parent = row
+		-- Upgrade only when owned, enough duplicates banked, and below max tier.
+		if entry.tier and entry.duplicates >= entry.duplicatesNeeded and entry.tier < entry.maxTier then
+			local upgradeButton = Instance.new("TextButton")
+			upgradeButton.Size = UDim2.new(0, 130, 0, 20)
+			upgradeButton.Position = UDim2.new(0, 5, 0, 48)
+			upgradeButton.BackgroundColor3 = Color3.fromRGB(90, 80, 60)
+			upgradeButton.TextColor3 = Color3.new(1, 1, 1)
+			upgradeButton.Font = Enum.Font.Gotham
+			upgradeButton.TextScaled = true
+			upgradeButton.Text = "Upgrade"
+			upgradeButton.Parent = row
 
-		local rollButton = Instance.new("TextButton")
-		rollButton.Size = UDim2.new(0, 130, 0, 22)
-		rollButton.Position = UDim2.new(0, 5, 0, 66)
-		rollButton.BackgroundColor3 = Color3.fromRGB(70, 90, 70)
-		rollButton.TextColor3 = Color3.new(1, 1, 1)
-		rollButton.Font = Enum.Font.Gotham
-		rollButton.TextScaled = true
-		rollButton.Text = "Roll (" .. tostring(catalog.cost) .. ")"
-		rollButton.Parent = row
-
-		rollButton.MouseButton1Click:Connect(function()
-			rollGachaEvent:FireServer(entry.id)
-		end)
+			upgradeButton.MouseButton1Click:Connect(function()
+				upgradePowerupEvent:FireServer(entry.id)
+			end)
+		end
 	end
 end
 
@@ -275,33 +283,45 @@ gachaButton.MouseButton1Click:Connect(function()
 	end
 end)
 
-gachaResultEvent.OnClientEvent:Connect(function(success, result, variant, rollStatus)
+gachaResultEvent.OnClientEvent:Connect(function(success, resultOrError, powerupId, rollStatus)
 	if not success then
-		if result == "InsufficientCurrency" then
+		if resultOrError == "InsufficientCurrency" then
 			statusLabel.Text = "Not enough currency"
 		else
-			statusLabel.Text = tostring(result)
+			statusLabel.Text = tostring(resultOrError)
 		end
 	else
-		-- rollStatus is GachaService.Roll's 4th return: "New" | "Upgraded" |
-		-- "Duplicate". Anything else/nil means the value is missing - show no
-		-- suffix rather than guessing a label from it.
-		local note
+		local entry = catalogById[powerupId]
+		local displayName = entry and entry.displayName or tostring(powerupId)
 		if rollStatus == "New" then
-			note = "New unlock"
-		elseif rollStatus == "Upgraded" then
-			note = "Upgraded"
+			local rarity = entry and entry.rarity or "?"
+			statusLabel.Text = "New unlock - " .. displayName .. " (" .. tostring(rarity) .. ")!"
 		elseif rollStatus == "Duplicate" then
-			note = "Duplicate"
-		end
-		if note then
-			statusLabel.Text = "Rolled " .. tostring(variant) .. "! " .. note
+			statusLabel.Text = "Duplicate - " .. displayName
 		else
-			statusLabel.Text = "Rolled " .. tostring(variant) .. "!"
+			statusLabel.Text = "Rolled " .. displayName
 		end
 	end
 
-	-- Re-run so Owned + Pity reflect the roll.
+	-- Re-run so tier/duplicate progress + pity reflect the roll.
+	task.spawn(refreshCatalog)
+end)
+
+upgradeResultEvent.OnClientEvent:Connect(function(powerupId, success, tierOrReason)
+	local entry = catalogById[powerupId]
+	local displayName = entry and entry.displayName or tostring(powerupId)
+	if success then
+		statusLabel.Text = displayName .. " upgraded to Tier " .. tostring(tierOrReason) .. "!"
+	elseif tierOrReason == "NotEnoughDuplicates" then
+		statusLabel.Text = "Not enough duplicates"
+	elseif tierOrReason == "MaxTier" then
+		statusLabel.Text = "Already at max tier"
+	elseif tierOrReason == "NotOwned" then
+		statusLabel.Text = "You don't own that"
+	else
+		statusLabel.Text = tostring(tierOrReason)
+	end
+
 	task.spawn(refreshCatalog)
 end)
 

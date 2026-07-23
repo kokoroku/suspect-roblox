@@ -41,46 +41,12 @@ function CurrencyStub.Spend(player, amount)
 	return true
 end
 
--- Weighted random pick from a powerup's variants table.
-local function rollVariant(powerupId, forceRareOrBetter)
-	local odds = PowerupService.GetOdds(powerupId)
-
-	if forceRareOrBetter then
-		-- filter out Common when pity kicks in
-		local filtered = {}
-		for _, entry in ipairs(odds) do
-			if entry.variant ~= "Common" then
-				table.insert(filtered, entry)
-			end
-		end
-		odds = filtered
-	end
-
-	local totalWeight = 0
-	local def = PowerupService.Definitions[powerupId]
-	for _, entry in ipairs(odds) do
-		totalWeight += def.variants[entry.variant].weight
-	end
-
-	local roll = math.random() * totalWeight
-	local cumulative = 0
-	for _, entry in ipairs(odds) do
-		cumulative += def.variants[entry.variant].weight
-		if roll <= cumulative then
-			return entry.variant
-		end
-	end
-
-	return odds[#odds].variant -- fallback, shouldn't hit
-end
-
--- Main entry point: called from the RollGacha RemoteEvent handler.
--- Returns (success: bool, resultOrError: string, variant: string?, rollStatus: "New"|"Upgraded"|"Duplicate"|nil)
-function GachaService.Roll(player, powerupId)
-	if not PowerupService.Definitions[powerupId] then
-		return false, "UnknownPowerup"
-	end
-
+-- Main entry point: called from the RollGacha RemoteEvent handler. The roll
+-- decides WHICH powerup you get (weighted by rarity); the tier/duplicate side
+-- is handled by PowerupOwnershipService. Pity guarantees a Rare-or-better
+-- POWERUP within PITY_THRESHOLD rolls, matching the roadmap's disclosed odds.
+-- Returns (success: bool, resultOrError: string, powerupId: string?, rollStatus: "New"|"Duplicate"|nil)
+function GachaService.Roll(player)
 	if not CurrencyStub.Spend(player, ROLL_COST) then
 		return false, "InsufficientCurrency"
 	end
@@ -88,49 +54,71 @@ function GachaService.Roll(player, powerupId)
 	pityCounter[player] = (pityCounter[player] or 0) + 1
 	local forcePity = pityCounter[player] >= PITY_THRESHOLD
 
-	local variant = rollVariant(powerupId, forcePity)
+	-- Build the candidate pool from all powerups, excluding Commons once pity
+	-- kicks in so the result is guaranteed Rare-or-better.
+	local pool = {}
+	local totalWeight = 0
+	for id, def in pairs(PowerupService.Definitions) do
+		if not (forcePity and def.rarity == "Common") then
+			table.insert(pool, id)
+			totalWeight += def.weight
+		end
+	end
 
-	if variant ~= "Common" then
+	local roll = math.random() * totalWeight
+	local cumulative = 0
+	local pickedId = pool[#pool] -- fallback, shouldn't hit
+	for _, id in ipairs(pool) do
+		cumulative += PowerupService.Definitions[id].weight
+		if roll <= cumulative then
+			pickedId = id
+			break
+		end
+	end
+
+	if PowerupService.Definitions[pickedId].rarity ~= "Common" then
 		pityCounter[player] = 0
 	end
 
-	local rollStatus = PowerupOwnershipService.GrantOrUpgrade(player, powerupId, variant)
+	local status = PowerupOwnershipService.GrantOrDuplicate(player, pickedId)
 
-	return true, "Success", variant, rollStatus
-end
-
--- Used by the lobby UI to show odds + current pity progress before rolling.
-function GachaService.GetDisclosure(player, powerupId)
-	return {
-		odds = PowerupService.GetOdds(powerupId),
-		cost = ROLL_COST,
-		pityRollsUsed = pityCounter[player] or 0,
-		pityThreshold = PITY_THRESHOLD,
-	}
+	return true, "Success", pickedId, status
 end
 
 -- One-call snapshot for the client gacha UI: cost, this player's pity progress,
--- and every powerup with its odds + which variant this player already owns.
+-- and every powerup with its roll odds + this player's tier/duplicate progress.
 -- Read-only, no side effects - safe for any client to call at any time.
 function GachaService.GetCatalog(player)
-	-- pairs order is nondeterministic - sort ids so the UI never reorders.
-	local ids = {}
-	for id in pairs(PowerupService.Definitions) do
-		table.insert(ids, id)
+	local RARITY_RANK = { Common = 1, Rare = 2, Epic = 3 }
+
+	-- Per-powerup roll percent, straight from GetOdds so display + roll agree.
+	local percentById = {}
+	for _, o in ipairs(PowerupService.GetOdds()) do
+		percentById[o.powerupId] = o.percent
 	end
-	table.sort(ids)
 
 	local powerups = {}
-	for _, id in ipairs(ids) do
-		local def = PowerupService.Definitions[id]
+	for id, def in pairs(PowerupService.Definitions) do
+		local entry = PowerupOwnershipService.GetOwnedEntry(player, id)
 		table.insert(powerups, {
 			id = id,
 			displayName = def.displayName,
-			team = def.team,
-			odds = PowerupService.GetOdds(id),
-			ownedVariant = PowerupOwnershipService.GetOwnedVariant(player, id),
+			rarity = def.rarity,
+			percent = percentById[id],
+			tier = entry and entry.tier or nil,
+			duplicates = entry and entry.duplicates or 0,
+			duplicatesNeeded = 3,
+			maxTier = 3,
 		})
 	end
+
+	table.sort(powerups, function(a, b)
+		local ra, rb = RARITY_RANK[a.rarity] or math.huge, RARITY_RANK[b.rarity] or math.huge
+		if ra ~= rb then
+			return ra < rb
+		end
+		return a.displayName < b.displayName
+	end)
 
 	return {
 		cost = ROLL_COST,

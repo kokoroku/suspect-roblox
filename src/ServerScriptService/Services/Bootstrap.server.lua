@@ -25,6 +25,9 @@ local MatchService = require(script.Parent.MatchService)
 local DebugFlags = require(script.Parent.DebugFlags)
 -- Side-effect service: requiring it is what activates its dead-player broadcasts.
 local SpectateService = require(script.Parent.SpectateService)
+-- Side-effect service (self-wires its match-start reset); also used by the
+-- DebugToggleLights handler below.
+local LightsSystem = require(script.Parent.LightsSystem)
 
 if DebugFlags.ALL_IMPOSTORS then
 	warn("[Suspect] DEBUG MODE: ALL_IMPOSTORS is ON (DebugFlags.lua) - everyone will be an impostor. Do not ship.")
@@ -48,7 +51,8 @@ Players.CharacterAutoLoads = false
 -- UsePowerup
 -- ============================================================
 Remotes.Get(Remotes.Names.UsePowerup).OnServerEvent:Connect(function(player, powerupId)
-	local success, reason = PowerupService.TryUse(player, powerupId)
+	local success, reason, cooldown = PowerupService.TryUse(player, powerupId)
+	Remotes.Get(Remotes.Names.PowerupUseResult):FireClient(player, powerupId, success, reason, cooldown)
 	if not success then
 		warn(player.Name, "failed to use", powerupId, "-", reason)
 	end
@@ -57,9 +61,22 @@ end)
 -- ============================================================
 -- RollGacha
 -- ============================================================
-Remotes.Get(Remotes.Names.RollGacha).OnServerEvent:Connect(function(player, powerupId)
-	local success, result, variant, rollStatus = GachaService.Roll(player, powerupId)
-	Remotes.Get(Remotes.Names.GachaResult):FireClient(player, success, result, variant, rollStatus)
+Remotes.Get(Remotes.Names.RollGacha).OnServerEvent:Connect(function(player)
+	-- Roll decides WHICH powerup - ignore any powerupId the client sends.
+	local success, resultOrError, powerupId, rollStatus = GachaService.Roll(player)
+	Remotes.Get(Remotes.Names.GachaResult):FireClient(player, success, resultOrError, powerupId, rollStatus)
+end)
+
+-- ============================================================
+-- UpgradePowerup - spend banked duplicates to raise a powerup's tier
+-- ============================================================
+Remotes.Get(Remotes.Names.UpgradePowerup).OnServerEvent:Connect(function(player, powerupId)
+	if type(powerupId) ~= "string" then
+		warn(player.Name, "sent an invalid UpgradePowerup id")
+		return
+	end
+	local success, tierOrReason = PowerupOwnershipService.TryUpgrade(player, powerupId)
+	Remotes.Get(Remotes.Names.UpgradeResult):FireClient(player, powerupId, success, tierOrReason)
 end)
 
 -- ============================================================
@@ -113,6 +130,18 @@ Remotes.Get(Remotes.Names.CastVote).OnServerEvent:Connect(function(player, targe
 end)
 
 -- ============================================================
+-- DebugToggleLights - test key (P) flips lights-out until the real sabotage
+-- system exists. Gated server-side by DebugFlags; the client always fires it.
+-- ============================================================
+Remotes.Get(Remotes.Names.DebugToggleLights).OnServerEvent:Connect(function(player)
+	if not DebugFlags.LIGHTS_TEST_CONTROLS then
+		warn(player.Name, "tried DebugToggleLights but LIGHTS_TEST_CONTROLS is off")
+		return
+	end
+	LightsSystem.SetLightsOut(not LightsSystem.IsLightsOut())
+end)
+
+-- ============================================================
 -- Player join: manual spawn (since CharacterAutoLoads is off). Bootstrap only
 -- decides WHEN the FIRST match starts - MATCH_START_GRACE seconds after the
 -- first player joins - and then hands off to MatchService, which owns role/task
@@ -125,6 +154,9 @@ end)
 -- ============================================================
 Players.PlayerAdded:Connect(function(player)
 	player:SetAttribute("Currency", 500)
+	if DebugFlags.GRANT_ALL_POWERUPS then
+		PowerupOwnershipService.DebugGrantMax(player, PowerupService.Definitions)
+	end
 	player:LoadCharacter() -- manual spawn, required now that CharacterAutoLoads is false
 
 	if firstMatchScheduled then

@@ -19,6 +19,8 @@ Remotes.Names = {
 	UsePowerup = "UsePowerup",
 	RollGacha = "RollGacha",
 	SetLoadout = "SetLoadout",
+	UpgradePowerup = "UpgradePowerup",
+	DebugToggleLights = "DebugToggleLights",
 
 	-- Server -> Client notifications
 	RoleAssigned = "RoleAssigned",
@@ -31,6 +33,15 @@ Remotes.Names = {
 	InventoryUpdated = "InventoryUpdated",
 	TasksUpdated = "TasksUpdated",
 	SpectateTargetsUpdated = "SpectateTargetsUpdated",
+	UpgradeResult = "UpgradeResult",
+	LoadoutApplied = "LoadoutApplied",
+	PowerupUseResult = "PowerupUseResult",
+	PowerupEffect = "PowerupEffect",
+	SeerResult = "SeerResult",
+	LightsChanged = "LightsChanged",
+	-- DebugToggleLights, PowerupEffect, SeerResult and LightsChanged are wired
+	-- by the effects/lights work that follows this change - declared now so this
+	-- file is only touched once.
 }
 
 -- RemoteFunctions (client invokes, server answers) - a request/response pair,

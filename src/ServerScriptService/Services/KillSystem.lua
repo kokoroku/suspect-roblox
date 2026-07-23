@@ -29,6 +29,15 @@ local DEATH_SOUND_ID = "rbxasset://sounds/uuhhh.mp3" -- classic Roblox death sou
 -- player -> cooldownUntil (os.clock())
 local killCooldowns = {}
 
+-- Callbacks fired after a kill is fully performed. Same one-directional hook
+-- pattern as MeetingSystem.OnMeetingStart - lets services react to a kill (e.g.
+-- PowerupService revealing the killer) without KillSystem requiring them.
+local killPerformedCallbacks = {}
+
+function KillSystem.OnKillPerformed(callback)
+	table.insert(killPerformedCallbacks, callback)
+end
+
 -- ============================================================
 -- One-time setup: ragdoll parts collide with the world/other players
 -- normally, but NOT with each other. Without this, a resting rig's
@@ -182,6 +191,10 @@ function KillSystem.AttemptKill(killer, target)
 	killCooldowns[killer] = os.clock() + KILL_COOLDOWN_SECONDS
 
 	MatchService.EvaluateWinCondition("Kill")
+
+	for _, callback in ipairs(killPerformedCallbacks) do
+		callback(killer, target)
+	end
 
 	return true
 end
