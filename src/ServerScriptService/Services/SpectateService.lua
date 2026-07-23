@@ -17,13 +17,16 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local RoleManager = require(ServerScriptService.Services.RoleManager)
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
+-- Cycle-safe: MatchService requires RoleManager/TaskManager/Remotes/DebugFlags,
+-- never SpectateService.
+local MatchService = require(ServerScriptService.Services.MatchService)
 
 local SpectateService = {}
 
--- SECURITY/DESIGN RULE: SpectateTargetsUpdated is ONLY ever fired to dead
--- players. Living clients must never receive death/alive information they
--- didn't witness, or exploiters could detect kills before a body is reported.
--- Late joiners (no role) get nothing.
+-- SECURITY/DESIGN RULE: the invariant is that ALIVE ROLE-HOLDERS never receive
+-- SpectateTargetsUpdated - they must not learn death/alive info they didn't
+-- witness, or exploiters could detect kills before a body is reported. Dead
+-- players AND roleless spectators (late joiners) both may receive it.
 local function broadcastToDead()
 	local aliveNames = {}
 	for _, player in ipairs(Players:GetPlayers()) do
@@ -34,7 +37,7 @@ local function broadcastToDead()
 
 	local targetsEvent = Remotes.Get(Remotes.Names.SpectateTargetsUpdated)
 	for _, player in ipairs(Players:GetPlayers()) do
-		if RoleManager.GetRole(player) ~= nil and not RoleManager.IsAlive(player) then
+		if not (RoleManager.GetRole(player) ~= nil and RoleManager.IsAlive(player)) then
 			targetsEvent:FireClient(player, aliveNames)
 		end
 	end
@@ -48,6 +51,20 @@ Players.PlayerRemoving:Connect(function()
 	-- An alive player leaving shrinks every ghost's target list. Defer so the
 	-- leaving player has fully dropped out of Players:GetPlayers() first.
 	task.defer(broadcastToDead)
+end)
+
+Players.PlayerAdded:Connect(function()
+	-- A late joiner during a live match is a roleless spectator and needs the
+	-- target list. Fire now and again shortly after - their client's listeners
+	-- may not be connected yet at join time (same reason as the status snapshot).
+	if MatchService.GetState() == "InProgress" then
+		task.defer(broadcastToDead)
+		task.delay(3, function()
+			if MatchService.GetState() == "InProgress" then
+				broadcastToDead()
+			end
+		end)
+	end
 end)
 
 return SpectateService

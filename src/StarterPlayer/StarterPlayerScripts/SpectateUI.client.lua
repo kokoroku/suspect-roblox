@@ -23,6 +23,7 @@ local UserInputService = game:GetService("UserInputService")
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
 local spectateTargetsEvent = Remotes.Get(Remotes.Names.SpectateTargetsUpdated)
 local playerDiedEvent = Remotes.Get(Remotes.Names.PlayerDied)
+local roundStatusEvent = Remotes.Get(Remotes.Names.RoundStatus)
 local rollGachaEvent = Remotes.Get(Remotes.Names.RollGacha)
 local gachaResultEvent = Remotes.Get(Remotes.Names.GachaResult)
 local upgradePowerupEvent = Remotes.Get(Remotes.Names.UpgradePowerup)
@@ -405,7 +406,7 @@ spectateTargetsEvent.OnClientEvent:Connect(function(names)
 		end
 
 		-- Keep watching the same player if they're still alive; otherwise
-		-- advance to the next valid target.
+		-- start from the top.
 		local found = false
 		for i, name in ipairs(targetNames) do
 			if name == previousName then
@@ -416,8 +417,23 @@ spectateTargetsEvent.OnClientEvent:Connect(function(names)
 		end
 		if not found then
 			targetIndex = 1
-			applyTarget()
 		end
+
+		-- Clamp into range and re-apply. This also covers the list arriving AFTER
+		-- spectate engaged - e.g. a late joiner's empty -> populated update.
+		if targetIndex > #targetNames then
+			targetIndex = 1
+		end
+		applyTarget()
+	end
+end)
+
+roundStatusEvent.OnClientEvent:Connect(function(data)
+	-- Late-joiner path: PlayerDied never fires for them, so the server's
+	-- spectator flag is what drops them into spectate. The Character == nil guard
+	-- means this can never hijack a living player's camera.
+	if data.state == "InProgress" and data.spectator and not spectating and localPlayer.Character == nil then
+		enterSpectate()
 	end
 end)
 

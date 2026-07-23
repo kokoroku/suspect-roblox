@@ -22,6 +22,7 @@ local GachaService = require(script.Parent.GachaService)
 local KillSystem = require(script.Parent.KillSystem)
 local MeetingSystem = require(script.Parent.MeetingSystem)
 local MatchService = require(script.Parent.MatchService)
+local TaskManager = require(script.Parent.TaskManager)
 local DebugFlags = require(script.Parent.DebugFlags)
 -- Side-effect service: requiring it is what activates its dead-player broadcasts.
 local SpectateService = require(script.Parent.SpectateService)
@@ -32,11 +33,6 @@ local LightsSystem = require(script.Parent.LightsSystem)
 if DebugFlags.ALL_IMPOSTORS then
 	warn("[Suspect] DEBUG MODE: ALL_IMPOSTORS is ON (DebugFlags.lua) - everyone will be an impostor. Do not ship.")
 end
-
--- Seconds to wait after the first player joins before starting the match,
--- so anyone joining alongside them is included in role/task assignment.
-local MATCH_START_GRACE = 5
-local firstMatchScheduled = false
 
 -- ============================================================
 -- Manual respawn control. Roblox auto-respawns characters a few seconds
@@ -110,16 +106,6 @@ Remotes.Get(Remotes.Names.AttemptKill).OnServerEvent:Connect(function(player, ta
 end)
 
 -- ============================================================
--- CallMeeting - emergency meeting button (bound to M on the client)
--- ============================================================
-Remotes.Get(Remotes.Names.CallMeeting).OnServerEvent:Connect(function(player)
-	local success, reason = MeetingSystem.StartMeeting(player, "Emergency", nil)
-	if not success then
-		warn(player.Name, "failed to call meeting -", reason)
-	end
-end)
-
--- ============================================================
 -- CastVote - client sends a target player name, or nil/false to Skip
 -- ============================================================
 Remotes.Get(Remotes.Names.CastVote).OnServerEvent:Connect(function(player, targetName)
@@ -127,6 +113,31 @@ Remotes.Get(Remotes.Names.CastVote).OnServerEvent:Connect(function(player, targe
 	if not success then
 		warn(player.Name, "failed to cast vote -", reason)
 	end
+end)
+
+-- ============================================================
+-- TaskFinished - client says its minigame window succeeded; server validates
+-- the open session (see TaskManager.TryFinish) before crediting the task.
+-- ============================================================
+Remotes.Get(Remotes.Names.TaskFinished).OnServerEvent:Connect(function(player, taskId)
+	if type(taskId) ~= "string" then
+		warn(player.Name, "sent an invalid TaskFinished id")
+		return
+	end
+
+	if MatchService.GetState() ~= "InProgress" or MeetingSystem.IsMeetingActive() then
+		Remotes.Get(Remotes.Names.TaskResult):FireClient(player, taskId, false, "NotAllowedNow")
+	else
+		local ok, reason = TaskManager.TryFinish(player, taskId)
+		Remotes.Get(Remotes.Names.TaskResult):FireClient(player, taskId, ok, reason)
+	end
+end)
+
+-- TaskManager cannot require MeetingSystem (cycle via MatchService), so the
+-- composition root wires this reaction: drop every open task session when a
+-- meeting starts (players frozen at a station can't keep a window alive).
+MeetingSystem.OnMeetingStart(function()
+	TaskManager.ClearAllSessions()
 end)
 
 -- ============================================================
@@ -142,29 +153,25 @@ Remotes.Get(Remotes.Names.DebugToggleLights).OnServerEvent:Connect(function(play
 end)
 
 -- ============================================================
--- Player join: manual spawn (since CharacterAutoLoads is off). Bootstrap only
--- decides WHEN the FIRST match starts - MATCH_START_GRACE seconds after the
--- first player joins - and then hands off to MatchService, which owns role/task
--- assignment and every restart afterward (self-scheduled by MatchService.EndMatch).
---
--- TEMPORARY: this one-shot first-match trigger stands in for the real
--- lobby/round-begin flow. Late joiners mid-match still spawn roleless until the
--- next round - RoleManager returns nil/false for them, so KillSystem's guards
--- mean they can't kill or be killed. Still acceptable for now.
+-- Player join: set currency, then manually spawn ONLY if the round loop is in a
+-- phase where a fresh character belongs. Joiners during "InProgress"/"Ended"
+-- deliberately get NO character - they are spectators until the round loop
+-- spawns them at the next intermission. CharacterAutoLoads is off, so no
+-- character appears unless we make one here.
 -- ============================================================
 Players.PlayerAdded:Connect(function(player)
 	player:SetAttribute("Currency", 500)
 	if DebugFlags.GRANT_ALL_POWERUPS then
 		PowerupOwnershipService.DebugGrantMax(player, PowerupService.Definitions)
 	end
-	player:LoadCharacter() -- manual spawn, required now that CharacterAutoLoads is false
 
-	if firstMatchScheduled then
-		return -- first match already scheduled/running; latecomers spawn roleless until the next round
+	local state = MatchService.GetState()
+	if state == "Waiting" or state == "Intermission" then
+		player:LoadCharacter()
 	end
-	firstMatchScheduled = true
-
-	task.delay(MATCH_START_GRACE, MatchService.StartMatch)
 end)
+
+-- Start the round loop. This is the ONLY call site.
+MatchService.StartRoundLoop()
 
 print("[Suspect] Services initialized.")

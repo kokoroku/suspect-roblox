@@ -14,18 +14,14 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local UserInputService = game:GetService("UserInputService")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
 local meetingStartedEvent = Remotes.Get(Remotes.Names.MeetingStarted)
 local voteResultEvent = Remotes.Get(Remotes.Names.VoteResult)
 local castVoteEvent = Remotes.Get(Remotes.Names.CastVote)
-local callMeetingEvent = Remotes.Get(Remotes.Names.CallMeeting)
 
 local localPlayer = Players.LocalPlayer
 local playerGui = localPlayer:WaitForChild("PlayerGui")
-
-local EMERGENCY_KEY = Enum.KeyCode.M
 
 -- ============================================================
 -- Build the GUI once. screenGui itself stays enabled once a meeting has
@@ -159,17 +155,4 @@ voteResultEvent.OnClientEvent:Connect(function(ejectedName, ejectedRole)
 	-- Stays visible for the whole round - cleared only when the next
 	-- meetingStartedEvent fires, not on a timer.
 	resultBanner.Visible = true
-end)
-
--- ============================================================
--- Emergency meeting key
--- ============================================================
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then
-		return
-	end
-	if input.KeyCode ~= EMERGENCY_KEY then
-		return
-	end
-	callMeetingEvent:FireServer()
 end)

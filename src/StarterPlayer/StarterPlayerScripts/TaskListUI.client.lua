@@ -17,6 +17,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
+local TaskDefs = require(ReplicatedStorage.Modules.TaskDefs)
 local tasksUpdatedEvent = Remotes.Get(Remotes.Names.TasksUpdated)
 
 local localPlayer = Players.LocalPlayer
@@ -71,14 +72,25 @@ local function clearTaskLabels()
 	end
 end
 
--- Task IDs are raw part names (e.g. "Task_Wiring_1"). Only ever shown
--- through this - the raw ID stays internal, used as the sort key.
-local function displayName(taskId)
-	local trimmed = taskId:gsub("^Task_", "")
-	return (trimmed:gsub("_", " "))
+-- Task text comes from the shared def now (the Estate-skin displayName), no
+-- longer derived from the raw part-name task ID.
+local function displayName(taskType)
+	return TaskDefs.Get(taskType).displayName
 end
 
-local function makeTaskLabel(taskId, done, layoutOrder)
+local function makeHeaderLabel(text, layoutOrder)
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.new(1, 0, 0, 20)
+	label.LayoutOrder = layoutOrder
+	label.BackgroundTransparency = 1
+	label.TextColor3 = Color3.fromRGB(200, 200, 200)
+	label.TextScaled = true
+	label.Font = Enum.Font.GothamBold
+	label.Text = text
+	label.Parent = taskHolder
+end
+
+local function makeTaskLabel(taskType, done, layoutOrder)
 	local label = Instance.new("TextLabel")
 	label.Size = UDim2.new(1, 0, 0, 24)
 	label.LayoutOrder = layoutOrder
@@ -86,32 +98,55 @@ local function makeTaskLabel(taskId, done, layoutOrder)
 	label.TextColor3 = done and DONE_COLOR or Color3.new(1, 1, 1)
 	label.TextScaled = true
 	label.Font = Enum.Font.Gotham
-	label.Text = (done and "\u{2713} " or "\u{2022} ") .. displayName(taskId)
+	label.Text = (done and "\u{2713} " or "\u{2022} ") .. displayName(taskType)
 	label.Parent = taskHolder
 end
 
 -- ============================================================
 -- Task list updates
+-- Payload is now { [taskId] = { done, taskType } }. We split into Long/Short
+-- groups, each alphabetical by display name, with a small header per group.
 -- ============================================================
 tasksUpdatedEvent.OnClientEvent:Connect(function(tasks)
 	clearTaskLabels()
 
-	-- Sort by raw task ID so the list order never jumps between updates.
-	local taskIds = {}
-	for taskId in pairs(tasks) do
-		table.insert(taskIds, taskId)
-	end
-	table.sort(taskIds)
-
-	local doneCount = 0
-	for index, taskId in ipairs(taskIds) do
-		local done = tasks[taskId] == true
-		if done then
+	local longEntries, shortEntries = {}, {}
+	local doneCount, totalCount = 0, 0
+	for _, entry in pairs(tasks) do
+		totalCount += 1
+		if entry.done then
 			doneCount += 1
 		end
-		makeTaskLabel(taskId, done, index)
+		if TaskDefs.Get(entry.taskType).length == "Long" then
+			table.insert(longEntries, entry)
+		else
+			table.insert(shortEntries, entry)
+		end
 	end
 
-	title.Text = string.format("Tasks (%d/%d)", doneCount, #taskIds)
-	screenGui.Enabled = #taskIds > 0
+	local function byDisplayName(a, b)
+		return displayName(a.taskType) < displayName(b.taskType)
+	end
+	table.sort(longEntries, byDisplayName)
+	table.sort(shortEntries, byDisplayName)
+
+	-- LayoutOrder ticks up across both groups so the order stays stable.
+	local order = 0
+	local function addGroup(headerText, entries)
+		if #entries == 0 then
+			return
+		end
+		makeHeaderLabel(headerText, order)
+		order += 1
+		for _, entry in ipairs(entries) do
+			makeTaskLabel(entry.taskType, entry.done, order)
+			order += 1
+		end
+	end
+
+	addGroup("Long tasks", longEntries)
+	addGroup("Short tasks", shortEntries)
+
+	title.Text = string.format("Tasks (%d/%d)", doneCount, totalCount)
+	screenGui.Enabled = totalCount > 0
 end)

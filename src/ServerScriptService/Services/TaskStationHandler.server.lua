@@ -13,8 +13,10 @@
 ]]
 
 local CollectionService = game:GetService("CollectionService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
+local Remotes = require(ReplicatedStorage.Modules.Remotes)
 local TaskManager = require(ServerScriptService.Services.TaskManager)
 local MeetingSystem = require(ServerScriptService.Services.MeetingSystem)
 local MatchService = require(ServerScriptService.Services.MatchService)
@@ -43,7 +45,20 @@ local function setupStation(part)
 		seenParts[part.Name] = part
 	end
 
-	TaskManager.RegisterTaskId(part.Name)
+	-- The TaskType attribute selects which minigame/def this station uses.
+	-- Missing attribute falls back to the Generic def so an untagged station
+	-- still works (just as a plain "Do the Task").
+	local taskType = part:GetAttribute("TaskType")
+	if taskType == nil then
+		warn(part:GetFullName(), "has no TaskType attribute - using the Generic fallback")
+		taskType = "Generic"
+	end
+
+	-- Holding is gone: the prompt is now a single press that opens the minigame
+	-- window client-side. HoldDuration 0 = instant trigger on press.
+	prompt.HoldDuration = 0
+
+	TaskManager.RegisterTaskId(part.Name, part, taskType)
 
 	prompt.Triggered:Connect(function(player)
 		-- Prompts stay physically visible; this is the server-side gate stopping
@@ -54,12 +69,11 @@ local function setupStation(part)
 			return
 		end
 
-		local success, reason = TaskManager.CompleteTask(player, part.Name)
-		if success then
-			-- Prompt stays enabled: assignments are per-player, so disabling it
-			-- here would block every other player assigned this same station.
-			-- TaskManager.CompleteTask rejects repeats/unassigned players anyway.
-			print(player.Name, "completed task:", part.Name, "- remaining:", TaskManager.GetRemainingCount())
+		-- Open a validated session and tell the client to pop the minigame; the
+		-- actual completion comes back later via TaskFinished -> TaskManager.TryFinish.
+		local ok, reason = TaskManager.StartSession(player, part.Name)
+		if ok then
+			Remotes.Get(Remotes.Names.TaskOpen):FireClient(player, part.Name, taskType, part.Position)
 		else
 			warn(player.Name, "failed task", part.Name, "-", reason)
 		end
