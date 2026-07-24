@@ -30,7 +30,8 @@ TaskDefs.Types = {
 	SortStow = { displayName = "Shelve the Library Books", length = "Short", module = "Placeholder", minDuration = 1, config = {} },
 
 	-- ---- Long tasks ----
-	EchoCode = { displayName = "Play Back the Piano Refrain", length = "Long", module = "Placeholder", minDuration = 1, config = {} },
+	-- minDuration: forced playback alone takes ~6s and a legitimate clear ~9-12s, so 6 is a pure anti-exploit floor.
+	EchoCode = { displayName = "Play Back the Piano Refrain", length = "Long", module = "EchoCode", minDuration = 6, config = {} },
 	ScrubDown = { displayName = "Polish the Silverware", length = "Long", module = "Placeholder", minDuration = 1, config = {} },
 	SpotCheck = { displayName = "Find the Master's Keys", length = "Long", module = "Placeholder", minDuration = 1, config = {} },
 	FlowRoute = { displayName = "Mend the Boiler Pipes", length = "Long", module = "Placeholder", minDuration = 1, config = {} },

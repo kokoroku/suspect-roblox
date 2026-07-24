@@ -20,6 +20,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
 local TaskDefs = require(ReplicatedStorage.Modules.TaskDefs)
 local RoleManager = require(ServerScriptService.Services.RoleManager)
+local DebugFlags = require(ServerScriptService.Services.DebugFlags)
 
 local TaskManager = {}
 
@@ -78,6 +79,25 @@ end
 function TaskManager.AssignTasks(crewPlayers)
 	assignments = {}
 	sessions = {}
+
+	-- DEBUG: hand every crew player every registered task, skipping the profile
+	-- roll entirely. lastProfileIndex is left untouched so the no-repeat rule
+	-- resumes cleanly the moment the flag goes back off. Minigame testing only.
+	if DebugFlags.ASSIGN_ALL_TASKS then
+		warn("[TaskManager] DEBUG: ASSIGN_ALL_TASKS is active - every crew player gets EVERY registered task.")
+		for _, player in ipairs(crewPlayers) do
+			local assigned = {}
+			for _, taskId in ipairs(allTaskIds) do
+				assigned[taskId] = { done = false, taskType = taskTypes[taskId] }
+			end
+			assignments[player] = assigned
+
+			local tasksEvent = Remotes.Get(Remotes.Names.TasksUpdated)
+			-- Only ever send a player their OWN task list
+			tasksEvent:FireClient(player, assigned)
+		end
+		return
+	end
 
 	if #allTaskIds == 0 then
 		warn("[TaskManager] No task stations registered - every crew player gets 0 tasks, so GetRemainingCount() reads 0 and the crew task win condition counts as already complete.")
