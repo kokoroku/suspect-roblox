@@ -22,6 +22,8 @@
 
 local Debris = game:GetService("Debris")
 
+local ClientSettings = require(script.Parent.Parent:WaitForChild("ClientSettings"))
+
 local EchoCode = {}
 
 -- ============================================================
@@ -163,7 +165,9 @@ function EchoCode.Build(contentFrame, _config, onComplete)
 		local sound = Instance.new("Sound")
 		sound.SoundId = NOTE_SOUND
 		sound.PlaybackSpeed = pitch
-		sound.Volume = VOLUME
+		-- Master slider governs client-created sounds; world/positional sounds join
+		-- via SoundGroups in the audio pass.
+		sound.Volume = ClientSettings.ApplyVolume(VOLUME)
 		sound.Parent = soundContainer
 		sound:Play()
 		Debris:AddItem(sound, 2)

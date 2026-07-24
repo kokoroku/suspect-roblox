@@ -19,6 +19,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
 local TaskDefs = require(ReplicatedStorage.Modules.TaskDefs)
 local UIStyle = require(ReplicatedStorage.Modules.UIStyle)
+local ClientSettings = require(script.Parent:WaitForChild("ClientSettings"))
 local tasksUpdatedEvent = Remotes.Get(Remotes.Names.TasksUpdated)
 
 local localPlayer = Players.LocalPlayer
@@ -109,6 +110,8 @@ listLayout.Parent = taskHolder
 
 -- Drag by the header row, resize by any edge or corner. Session-only memory:
 -- reapplied whenever the list comes back on screen, reset on rejoin by design.
+local DEFAULT_POSITION = panel.Position -- home spot/size, for the layout reset
+local DEFAULT_SIZE = panel.Size
 local savedPosition = panel.Position
 local savedSize = panel.Size
 
@@ -120,6 +123,14 @@ panel:GetPropertyChangedSignal("Position"):Connect(function()
 end)
 panel:GetPropertyChangedSignal("Size"):Connect(function()
 	savedSize = panel.Size
+end)
+
+-- Layout reset: restore the default spot AND size, forgetting the dragged values.
+ClientSettings.ResetLayout.Event:Connect(function()
+	panel.Position = DEFAULT_POSITION
+	panel.Size = DEFAULT_SIZE
+	savedPosition = DEFAULT_POSITION
+	savedSize = DEFAULT_SIZE
 end)
 
 local function clearTaskLabels()

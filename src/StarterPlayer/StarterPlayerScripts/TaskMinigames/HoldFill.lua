@@ -29,6 +29,8 @@
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
+local ClientSettings = require(script.Parent.Parent:WaitForChild("ClientSettings"))
+
 local HoldFill = {}
 
 -- ============================================================
@@ -137,7 +139,7 @@ function HoldFill.Build(contentFrame, _config, onComplete)
 	holdButton.TextColor3 = Color3.new(1, 1, 1)
 	holdButton.TextScaled = true
 	holdButton.Font = Enum.Font.GothamBold
-	holdButton.Text = "HOLD [F]"
+	holdButton.Text = "HOLD [" .. ClientSettings.GetKey("TaskAction").Name .. "]"
 	holdButton.Parent = contentFrame
 
 	local corner = Instance.new("UICorner")
@@ -200,7 +202,8 @@ function HoldFill.Build(contentFrame, _config, onComplete)
 		if gameProcessed then
 			return
 		end
-		if input.KeyCode == Enum.KeyCode.F then
+		-- Looked up at input time so a remap applies instantly (no reconnection).
+		if input.KeyCode == ClientSettings.GetKey("TaskAction") then
 			keyHeld = true
 		end
 	end))
@@ -209,7 +212,8 @@ function HoldFill.Build(contentFrame, _config, onComplete)
 		if gameProcessed then
 			return
 		end
-		if input.KeyCode == Enum.KeyCode.F then
+		-- Looked up at input time so a remap applies instantly (no reconnection).
+		if input.KeyCode == ClientSettings.GetKey("TaskAction") then
 			keyHeld = false
 		end
 	end))

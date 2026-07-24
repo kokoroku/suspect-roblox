@@ -19,6 +19,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
 local UIStyle = require(ReplicatedStorage.Modules.UIStyle)
+local ClientSettings = require(script.Parent:WaitForChild("ClientSettings"))
 
 local meetingStartedEvent = Remotes.Get(Remotes.Names.MeetingStarted)
 local voteResultEvent = Remotes.Get(Remotes.Names.VoteResult)
@@ -58,6 +59,7 @@ layout.Padding = UDim.new(0, UIStyle.Pad)
 layout.SortOrder = Enum.SortOrder.LayoutOrder
 layout.Parent = bar
 
+local barButtons = {} -- { button, tab } so labels can re-read their key on change
 for i, entry in ipairs(BUTTONS) do
 	local button = UIStyle.MakeButton(bar, entry.text)
 	button.Size = UDim2.fromOffset(BUTTON_W, BUTTON_H)
@@ -66,7 +68,17 @@ for i, entry in ipairs(BUTTONS) do
 	button.MouseButton1Click:Connect(function()
 		hubOpenEvent:Fire(entry.tab)
 	end)
+	barButtons[i] = { button = button, tab = entry.tab }
 end
+
+-- Labels read the current key (tab name == keybind action) and refresh on change.
+local function refreshLabels()
+	for _, b in ipairs(barButtons) do
+		b.button.Text = b.tab .. " [" .. ClientSettings.GetKey(b.tab).Name .. "]"
+	end
+end
+refreshLabels()
+ClientSettings.Changed.Event:Connect(refreshLabels)
 
 -- ============================================================
 -- Meeting visibility - mirrors MeetingUI's own lifecycle events.

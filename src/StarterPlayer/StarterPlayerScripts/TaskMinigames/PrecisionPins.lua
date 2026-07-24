@@ -30,6 +30,8 @@
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 
+local ClientSettings = require(script.Parent.Parent:WaitForChild("ClientSettings"))
+
 local PrecisionPins = {}
 
 -- ============================================================
@@ -214,7 +216,8 @@ function PrecisionPins.Build(contentFrame, _config, onComplete)
 		if gameProcessed then
 			return
 		end
-		if input.KeyCode == Enum.KeyCode.F then
+		-- Looked up at input time so a remap applies instantly (no reconnection).
+		if input.KeyCode == ClientSettings.GetKey("TaskAction") then
 			attempt()
 		end
 	end))

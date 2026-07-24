@@ -27,6 +27,7 @@ local Debris = game:GetService("Debris")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
 local UIStyle = require(ReplicatedStorage.Modules.UIStyle)
+local ClientSettings = require(script.Parent:WaitForChild("ClientSettings"))
 
 local setLoadoutEvent = Remotes.Get(Remotes.Names.SetLoadout)
 local loadoutResultEvent = Remotes.Get(Remotes.Names.LoadoutResult)
@@ -519,7 +520,9 @@ local function playSound(refs, pitch, volume)
 	local sound = Instance.new("Sound")
 	sound.SoundId = ROLL_SOUND
 	sound.PlaybackSpeed = pitch
-	sound.Volume = volume
+	-- Master slider governs client-created sounds; world/positional sounds join via
+	-- SoundGroups in the audio pass.
+	sound.Volume = ClientSettings.ApplyVolume(volume)
 	sound.Parent = refs.cardSounds
 	sound:Play()
 	Debris:AddItem(sound, 2)
@@ -889,9 +892,10 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then
 		return
 	end
-	if input.KeyCode == Enum.KeyCode.G then
+	-- Looked up at input time so a remap applies instantly (no reconnection).
+	if input.KeyCode == ClientSettings.GetKey("Store") then
 		requestTab("Store")
-	elseif input.KeyCode == Enum.KeyCode.L then
+	elseif input.KeyCode == ClientSettings.GetKey("Inventory") then
 		requestTab("Inventory")
 	end
 end)

@@ -18,6 +18,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
 local UIStyle = require(ReplicatedStorage.Modules.UIStyle)
+local ClientSettings = require(script.Parent:WaitForChild("ClientSettings"))
 local usePowerupEvent = Remotes.Get(Remotes.Names.UsePowerup)
 local powerupUseResultEvent = Remotes.Get(Remotes.Names.PowerupUseResult)
 local loadoutAppliedEvent = Remotes.Get(Remotes.Names.LoadoutApplied)
@@ -42,8 +43,20 @@ local REASON_TEXT = {
 }
 
 local slotIds = { nil, nil } -- powerupId equipped in each slot (or nil)
-local slots = {} -- [i] = { nameLabel, cooldownLabel, token }
+local slots = {} -- [i] = { nameLabel, cooldownLabel, token, keyBadge }
 local displayNameById = {} -- resolved lazily from the gacha catalog
+
+-- Slot index -> its keybind action, so the badge/hotkey read the current binding.
+local SLOT_ACTION = { "Powerup1", "Powerup2" }
+
+-- Short display for a keycap: digit keys collapse to their number, letters as-is.
+local DIGIT_NAMES = {
+	Zero = "0", One = "1", Two = "2", Three = "3", Four = "4",
+	Five = "5", Six = "6", Seven = "7", Eight = "8", Nine = "9",
+}
+local function shortKeyName(keyCode)
+	return DIGIT_NAMES[keyCode.Name] or keyCode.Name
+end
 
 -- ============================================================
 -- Build the GUI once.
@@ -173,7 +186,7 @@ local function makeSlot(index, keyText)
 	cooldownCorner.CornerRadius = UDim.new(0, UIStyle.Corner)
 	cooldownCorner.Parent = cooldownLabel -- destroyed with the overlay
 
-	slots[index] = { nameLabel = nameLabel, cooldownLabel = cooldownLabel, token = 0 }
+	slots[index] = { nameLabel = nameLabel, cooldownLabel = cooldownLabel, token = 0, keyBadge = keyBadge }
 
 	button.MouseButton1Click:Connect(function()
 		useSlot(index)
@@ -182,6 +195,15 @@ end
 
 makeSlot(1, "1")
 makeSlot(2, "2")
+
+-- Badges show each slot's current key and refresh whenever a binding changes.
+local function refreshKeyBadges()
+	for index, action in ipairs(SLOT_ACTION) do
+		slots[index].keyBadge.Text = shortKeyName(ClientSettings.GetKey(action))
+	end
+end
+refreshKeyBadges()
+ClientSettings.Changed.Event:Connect(refreshKeyBadges)
 
 -- ============================================================
 -- Feedback helpers
@@ -290,9 +312,10 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then
 		return
 	end
-	if input.KeyCode == Enum.KeyCode.One then
+	-- Looked up at input time so a remap applies instantly (no reconnection).
+	if input.KeyCode == ClientSettings.GetKey("Powerup1") then
 		useSlot(1)
-	elseif input.KeyCode == Enum.KeyCode.Two then
+	elseif input.KeyCode == ClientSettings.GetKey("Powerup2") then
 		useSlot(2)
 	end
 end)

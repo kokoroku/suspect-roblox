@@ -48,6 +48,8 @@ local function setupStation(part)
 		return
 	end
 
+	-- Custom prompt UI: replaced by the pixel keybind renderer (PromptUI.client).
+	prompt.Style = Enum.ProximityPromptStyle.Custom
 	prompt.ActionText = "Fix"
 	-- Single press opens the fix minigame window client-side, exactly like a task
 	-- station. HoldDuration 0 = instant trigger on press.

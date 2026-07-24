@@ -30,6 +30,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
 local UIStyle = require(ReplicatedStorage.Modules.UIStyle)
+local ClientSettings = require(script.Parent:WaitForChild("ClientSettings"))
 local roleAssignedEvent = Remotes.Get(Remotes.Names.RoleAssigned)
 local sabotageStatusEvent = Remotes.Get(Remotes.Names.SabotageStatus)
 local triggerSabotageEvent = Remotes.Get(Remotes.Names.TriggerSabotage)
@@ -39,7 +40,6 @@ local playerDiedEvent = Remotes.Get(Remotes.Names.PlayerDied)
 local localPlayer = Players.LocalPlayer
 local playerGui = localPlayer:WaitForChild("PlayerGui")
 
-local TOGGLE_KEY = Enum.KeyCode.C
 local IMPOSTOR_ROLE = "Impostor"
 
 -- Mirrors of SabotageService's tuning, for the countdown LABEL only.
@@ -84,12 +84,19 @@ end)
 
 -- Drag by the header. No resize - the panel is two rows and a status line.
 -- Session-only memory, same as the hub: reset on rejoin by design.
+local DEFAULT_POSITION = panel.Position -- home spot, for the layout reset
 local savedPosition = panel.Position
 
 UIStyle.MakeDraggable(panel, headerStrip)
 
 panel:GetPropertyChangedSignal("Position"):Connect(function()
 	savedPosition = panel.Position
+end)
+
+-- Layout reset: send the panel home and forget the dragged spot.
+ClientSettings.ResetLayout.Event:Connect(function()
+	panel.Position = DEFAULT_POSITION
+	savedPosition = DEFAULT_POSITION
 end)
 
 local statusLabel = UIStyle.MakeLabel(panel, "", true)
@@ -226,7 +233,8 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then
 		return
 	end
-	if input.KeyCode ~= TOGGLE_KEY then
+	-- Looked up at input time so a remap applies instantly (no reconnection).
+	if input.KeyCode ~= ClientSettings.GetKey("Sabotage") then
 		return
 	end
 	if not isImpostor then

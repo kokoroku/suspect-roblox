@@ -23,6 +23,7 @@ local UserInputService = game:GetService("UserInputService")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
 local UIStyle = require(ReplicatedStorage.Modules.UIStyle)
+local ClientSettings = require(script.Parent:WaitForChild("ClientSettings"))
 local spectateTargetsEvent = Remotes.Get(Remotes.Names.SpectateTargetsUpdated)
 local playerDiedEvent = Remotes.Get(Remotes.Names.PlayerDied)
 local roundStatusEvent = Remotes.Get(Remotes.Names.RoundStatus)
@@ -31,8 +32,6 @@ local localPlayer = Players.LocalPlayer
 local playerGui = localPlayer:WaitForChild("PlayerGui")
 
 local DEATH_VIEW_DELAY = 2 -- seconds to watch your own body before spectate engages
-local PREV_KEY = Enum.KeyCode.Q
-local NEXT_KEY = Enum.KeyCode.E
 
 local spectating = false
 local targetNames = {}
@@ -87,6 +86,17 @@ hintLabel.Size = UDim2.fromOffset(150, 32)
 hintLabel.LayoutOrder = 4
 hintLabel.TextSize = 12
 hintLabel.TextXAlignment = Enum.TextXAlignment.Center
+
+-- Rebuild the legend from the CURRENT bindings so it reflects remaps.
+local function refreshHint()
+	hintLabel.Text = string.format(
+		"%s - Store   %s - Inventory",
+		ClientSettings.GetKey("Store").Name,
+		ClientSettings.GetKey("Inventory").Name
+	)
+end
+refreshHint()
+ClientSettings.Changed.Event:Connect(refreshHint)
 
 local lobbyButton = makeBarButton("Return to Lobby", 140, 5)
 
@@ -242,9 +252,10 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed or not spectating then
 		return
 	end
-	if input.KeyCode == PREV_KEY then
+	-- Looked up at input time so a remap applies instantly (no reconnection).
+	if input.KeyCode == ClientSettings.GetKey("SpectatePrev") then
 		cycle(-1)
-	elseif input.KeyCode == NEXT_KEY then
+	elseif input.KeyCode == ClientSettings.GetKey("SpectateNext") then
 		cycle(1)
 	end
 end)

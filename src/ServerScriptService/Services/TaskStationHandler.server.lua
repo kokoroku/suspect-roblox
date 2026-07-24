@@ -17,6 +17,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
+local TaskDefs = require(ReplicatedStorage.Modules.TaskDefs)
 local TaskManager = require(ServerScriptService.Services.TaskManager)
 local MeetingSystem = require(ServerScriptService.Services.MeetingSystem)
 local MatchService = require(ServerScriptService.Services.MatchService)
@@ -52,6 +53,18 @@ local function setupStation(part)
 	if taskType == nil then
 		warn(part:GetFullName(), "has no TaskType attribute - using the Generic fallback")
 		taskType = "Generic"
+	end
+
+	-- Custom prompt UI: the default Roblox prompt is replaced by the pixel
+	-- keybind renderer (PromptUI.client), so ObjectText no longer matters for
+	-- display. ActionText is the task's themed displayName, so the floating label
+	-- names the task; the Generic fallback reads "Use" rather than "Do the Task".
+	prompt.Style = Enum.ProximityPromptStyle.Custom
+	local def = TaskDefs.Get(taskType)
+	if def == TaskDefs.Types.Generic then
+		prompt.ActionText = "Use"
+	else
+		prompt.ActionText = def.displayName
 	end
 
 	-- Holding is gone: the prompt is now a single press that opens the minigame

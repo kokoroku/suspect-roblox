@@ -31,7 +31,9 @@ local function setupButton(part)
 	-- distance/cooldown checks here: MeetingSystem.StartMeeting already rejects
 	-- dead callers (and the match-state / meeting-active / emergency-used gates),
 	-- and ProximityPrompt triggers are engine-validated for range.
-	prompt.ActionText = "Call Emergency Meeting"
+	-- Custom prompt UI: replaced by the pixel keybind renderer (PromptUI.client).
+	prompt.Style = Enum.ProximityPromptStyle.Custom
+	prompt.ActionText = "Call meeting"
 	prompt.HoldDuration = 0.5
 	-- E-only world interaction (see TaskStationHandler's ClickablePrompt comment for
 	-- the rule + mobile debt): a stray click calling a meeting is the same

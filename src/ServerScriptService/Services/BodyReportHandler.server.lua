@@ -24,6 +24,12 @@ local function setupBody(root)
 		prompt.Parent = root
 	end
 
+	-- Custom prompt UI: replaced by the pixel keybind renderer (PromptUI.client).
+	-- Set on every setup (not just when we create the prompt) so an editor-placed
+	-- prompt still gets the custom style and the exact label.
+	prompt.Style = Enum.ProximityPromptStyle.Custom
+	prompt.ActionText = "Report body"
+
 	-- E-only world interaction (see TaskStationHandler's ClickablePrompt comment for
 	-- the rule + mobile debt): a stray click filing a report is the same
 	-- click-through misfire class.

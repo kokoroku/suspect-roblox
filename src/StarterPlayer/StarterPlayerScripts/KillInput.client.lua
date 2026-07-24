@@ -12,10 +12,10 @@ local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
+local ClientSettings = require(script.Parent:WaitForChild("ClientSettings"))
 local attemptKillEvent = Remotes.Get(Remotes.Names.AttemptKill)
 
 local localPlayer = Players.LocalPlayer
-local KILL_KEY = Enum.KeyCode.F
 local SEARCH_RANGE = 10 -- slightly generous on purpose; real check is server-side
 
 local function findNearestTarget()
@@ -44,7 +44,8 @@ end
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then return end
-	if input.KeyCode ~= KILL_KEY then return end
+	-- Looked up at input time so a remap applies instantly (no reconnection).
+	if input.KeyCode ~= ClientSettings.GetKey("Kill") then return end
 
 	local target = findNearestTarget()
 	if target then

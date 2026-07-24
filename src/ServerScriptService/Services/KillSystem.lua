@@ -25,6 +25,7 @@ local KILL_COOLDOWN_SECONDS = 25
 local DEAD_BODY_TAG = "DeadBody"
 local RAGDOLL_COLLISION_GROUP = "RagdollParts"
 local DEATH_SOUND_ID = "rbxasset://sounds/uuhhh.mp3" -- classic Roblox death sound; swap out later for custom SFX
+local KILL_SOUND_ID = "rbxasset://sounds/snap.mp3" -- engine-bundled; the one string to swap if it doesn't resolve
 
 -- player -> cooldownUntil (os.clock())
 local killCooldowns = {}
@@ -72,6 +73,57 @@ local function playDeathSound(character)
 	sound.Parent = head
 	sound:Play()
 	Debris:AddItem(sound, 5)
+end
+
+-- Positional "snap" at the corpse, hosted on the torso/root so it plays from the
+-- body's location and falls off with distance.
+-- GAMEPLAY NOTE: this is audible to any player within ~35 studs BY DESIGN - kills
+-- are information. (Delete this call to keep kills silent.)
+local function playKillSound(character)
+	local host = character:FindFirstChild("Torso") or character:FindFirstChild("HumanoidRootPart")
+	if not host then
+		return
+	end
+	local sound = Instance.new("Sound")
+	sound.SoundId = KILL_SOUND_ID
+	sound.PlaybackSpeed = 0.85
+	sound.Volume = 0.6
+	sound.RollOffMode = Enum.RollOffMode.Inverse
+	sound.RollOffMaxDistance = 35
+	sound.Parent = host
+	sound:Play()
+end
+
+-- A thin dark-red disc on the floor under the corpse. Parented to the CORPSE
+-- MODEL so every existing body-cleanup path (clearAllBodies, respawn, etc.)
+-- removes it automatically with the body.
+local function spawnBloodPool(character)
+	local torso = character:FindFirstChild("Torso") or character:FindFirstChild("HumanoidRootPart")
+	if not torso then
+		return
+	end
+	-- Find the floor beneath the corpse so the pool lies flat on it (ignore the
+	-- corpse itself so we don't hit its own parts).
+	local origin = torso.Position
+	local rayParams = RaycastParams.new()
+	rayParams.FilterType = Enum.RaycastFilterType.Exclude
+	rayParams.FilterDescendantsInstances = { character }
+	local result = workspace:Raycast(origin, Vector3.new(0, -50, 0), rayParams)
+	local floorY = result and result.Position.Y or (origin.Y - 3)
+
+	local pool = Instance.new("Part")
+	pool.Name = "BloodPool"
+	pool.Shape = Enum.PartType.Cylinder
+	pool.Size = Vector3.new(0.1, 4, 4) -- 0.1 tall, ~4 studs across
+	pool.Anchored = true
+	pool.CanCollide = false
+	pool.CanQuery = false
+	pool.Color = Color3.fromRGB(90, 15, 15)
+	pool.Material = Enum.Material.SmoothPlastic
+	-- A Cylinder's length runs along X; rotate 90 deg about Z so the thin axis
+	-- points up and the round face lies flat on the floor.
+	pool.CFrame = CFrame.new(origin.X, floorY + 0.05, origin.Z) * CFrame.Angles(0, 0, math.rad(90))
+	pool.Parent = character
 end
 
 -- Turns a just-killed player's character into a real, connected R6 ragdoll.
@@ -189,6 +241,17 @@ function KillSystem.AttemptKill(killer, target)
 	RoleManager.SetAlive(target, false)
 	turnIntoBody(target)
 	killCooldowns[killer] = os.clock() + KILL_COOLDOWN_SECONDS
+
+	-- Killer-side client feedback (vignette / FOV punch / cooldown chip). The chip
+	-- counts down the same cooldown the system just applied.
+	Remotes.Get(Remotes.Names.KillFeedback):FireClient(killer, { cooldown = KILL_COOLDOWN_SECONDS })
+
+	-- World feedback at the body: a nearby-audible snap and a floor blood pool.
+	local corpse = target.Character
+	if corpse then
+		playKillSound(corpse)
+		spawnBloodPool(corpse)
+	end
 
 	MatchService.EvaluateWinCondition("Kill")
 
