@@ -21,6 +21,7 @@ Remotes.Names = {
 	UpgradePowerup = "UpgradePowerup",
 	DebugToggleLights = "DebugToggleLights",
 	TaskFinished = "TaskFinished",
+	TaskCancel = "TaskCancel",
 
 	-- Server -> Client notifications
 	RoleAssigned = "RoleAssigned",

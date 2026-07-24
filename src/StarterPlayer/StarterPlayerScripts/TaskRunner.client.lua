@@ -24,6 +24,7 @@ local TaskDefs = require(ReplicatedStorage.Modules.TaskDefs)
 local taskOpenEvent = Remotes.Get(Remotes.Names.TaskOpen)
 local taskResultEvent = Remotes.Get(Remotes.Names.TaskResult)
 local taskFinishedEvent = Remotes.Get(Remotes.Names.TaskFinished)
+local taskCancelEvent = Remotes.Get(Remotes.Names.TaskCancel)
 local meetingStartedEvent = Remotes.Get(Remotes.Names.MeetingStarted)
 local playerDiedEvent = Remotes.Get(Remotes.Names.PlayerDied)
 
@@ -49,6 +50,9 @@ window.Size = UDim2.new(0, 420, 0, 320)
 window.Position = UDim2.new(0.5, -210, 0.5, -160)
 window.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
 window.BackgroundTransparency = 0.1
+-- Active sinks clicks so nothing inside the window can ever pass through to world
+-- ProximityPrompts behind it. Descendants still receive their own input normally.
+window.Active = true
 window.Parent = screenGui
 
 -- ---- Title bar (task name + close button) ----
@@ -183,6 +187,8 @@ local function openWindow(taskId, taskType, stationPos)
 			local character = localPlayer.Character
 			local root = character and character:FindFirstChild("HumanoidRootPart")
 			if root and (root.Position - stationPos).Magnitude > CANCEL_RANGE then
+				-- Walk-away is a non-result close: cancel the open session first.
+				taskCancelEvent:FireServer(taskId)
 				closeWindow()
 				break
 			end
@@ -237,24 +243,34 @@ end)
 -- ============================================================
 closeButton.MouseButton1Click:Connect(function()
 	if currentTaskId then
+		-- Non-result close: cancel the open session before hiding.
+		taskCancelEvent:FireServer(currentTaskId)
 		closeWindow()
 	end
 end)
 
 meetingStartedEvent.OnClientEvent:Connect(function()
 	if currentTaskId then
+		-- Non-result close: cancel the open session before hiding. (Redundant after
+		-- the server's own meeting-time session clear - a harmless no-op.)
+		taskCancelEvent:FireServer(currentTaskId)
 		closeWindow()
 	end
 end)
 
 playerDiedEvent.OnClientEvent:Connect(function()
 	if currentTaskId then
+		-- Non-result close: cancel the open session before hiding. (Redundant after
+		-- the server's own death-time session clear - a harmless no-op.)
+		taskCancelEvent:FireServer(currentTaskId)
 		closeWindow()
 	end
 end)
 
 localPlayer.CharacterAdded:Connect(function()
 	if currentTaskId then
+		-- Non-result close: cancel the open session before hiding.
+		taskCancelEvent:FireServer(currentTaskId)
 		closeWindow()
 	end
 end)

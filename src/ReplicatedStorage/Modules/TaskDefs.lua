@@ -23,18 +23,26 @@ TaskDefs.Types = {
 	-- ---- Short tasks ----
 	-- minDuration: fastest legitimate clear is ~2.5-3s, so 2 is a pure anti-exploit floor.
 	WireSplice = { displayName = "Rewire the Chandelier", length = "Short", module = "WireSplice", minDuration = 2, config = {} },
-	DialMatch = { displayName = "Tune the Gramophone", length = "Short", module = "Placeholder", minDuration = 1, config = {} },
-	HoldFill = { displayName = "Fill the Oil Lamps", length = "Short", module = "Placeholder", minDuration = 1, config = {} },
-	SliderSync = { displayName = "Trim the Gas Lamps", length = "Short", module = "Placeholder", minDuration = 1, config = {} },
-	PrecisionPins = { displayName = "Pick the Cabinet Lock", length = "Short", module = "Placeholder", minDuration = 1, config = {} },
-	SortStow = { displayName = "Shelve the Library Books", length = "Short", module = "Placeholder", minDuration = 1, config = {} },
+	-- minDuration: floor raised to match the reworked design's slower legitimate clears; still pure anti-exploit, never gameplay pacing.
+	DialMatch = { displayName = "Tune the Gramophone", length = "Short", module = "DialMatch", minDuration = 4, config = {} },
+	-- minDuration: floor raised to match the reworked design's slower legitimate clears; still pure anti-exploit, never gameplay pacing.
+	HoldFill = { displayName = "Fill the Oil Lamps", length = "Short", module = "HoldFill", minDuration = 3, config = {} },
+	-- minDuration: anti-exploit floor.
+	SliderSync = { displayName = "Trim the Gas Lamps", length = "Short", module = "SliderSync", minDuration = 2, config = {} },
+	-- minDuration: pure anti-exploit floor, legit clears take 3-6s.
+	PrecisionPins = { displayName = "Pick the Cabinet Lock", length = "Short", module = "PrecisionPins", minDuration = 2, config = {} },
+	-- minDuration: anti-exploit floor.
+	SortStow = { displayName = "Shelve the Library Books", length = "Short", module = "SortStow", minDuration = 3, config = {} },
 
 	-- ---- Long tasks ----
 	-- minDuration: forced playback alone takes ~6s and a legitimate clear ~9-12s, so 6 is a pure anti-exploit floor.
 	EchoCode = { displayName = "Play Back the Piano Refrain", length = "Long", module = "EchoCode", minDuration = 6, config = {} },
-	ScrubDown = { displayName = "Polish the Silverware", length = "Long", module = "Placeholder", minDuration = 1, config = {} },
-	SpotCheck = { displayName = "Find the Master's Keys", length = "Long", module = "Placeholder", minDuration = 1, config = {} },
-	FlowRoute = { displayName = "Mend the Boiler Pipes", length = "Long", module = "Placeholder", minDuration = 1, config = {} },
+	-- minDuration: anti-exploit floor well under a legit clear (~12-18s).
+	ScrubDown = { displayName = "Polish the Silverware", length = "Long", module = "ScrubDown", minDuration = 6, config = {} },
+	-- minDuration: anti-exploit floor well under a legit clear (~8-20s).
+	SpotCheck = { displayName = "Find the Master's Keys", length = "Long", module = "SpotCheck", minDuration = 4, config = {} },
+	-- minDuration: legit clears run ~15-30s; pure anti-exploit floor.
+	FlowRoute = { displayName = "Mend the Boiler Pipes", length = "Long", module = "FlowRoute", minDuration = 6, config = {} },
 
 	-- ---- Fallback ----
 	Generic = { displayName = "Do the Task", length = "Short", module = "Placeholder", minDuration = 1, config = {} },

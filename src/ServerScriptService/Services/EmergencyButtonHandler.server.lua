@@ -32,6 +32,10 @@ local function setupButton(part)
 	-- and ProximityPrompt triggers are engine-validated for range.
 	prompt.ActionText = "Call Emergency Meeting"
 	prompt.HoldDuration = 0.5
+	-- E-only world interaction (see TaskStationHandler's ClickablePrompt comment for
+	-- the rule + mobile debt): a stray click calling a meeting is the same
+	-- click-through misfire class.
+	prompt.ClickablePrompt = false
 
 	prompt.Triggered:Connect(function(player)
 		local success, reason = MeetingSystem.StartMeeting(player, "Emergency", nil)

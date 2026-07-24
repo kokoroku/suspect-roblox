@@ -225,6 +225,22 @@ function TaskManager.ClearAllSessions()
 	sessions = {}
 end
 
+-- True iff this player has a live session AND it is for this exact taskId.
+function TaskManager.HasSession(player, taskId)
+	local session = sessions[player]
+	return session ~= nil and session.taskId == taskId
+end
+
+-- Cancel an OPEN attempt: clear this player's session only if it exists and
+-- matches taskId (otherwise a no-op). Never touches assignments or done-state -
+-- cancelling abandons an open window, it never un-completes a task.
+function TaskManager.CancelSession(player, taskId)
+	local session = sessions[player]
+	if session and session.taskId == taskId then
+		sessions[player] = nil
+	end
+end
+
 -- Used by RoleManager.CheckWinCondition to know if crew has finished.
 function TaskManager.GetRemainingCount()
 	local remaining = 0

@@ -23,6 +23,11 @@ local function setupBody(root)
 		prompt.Parent = root
 	end
 
+	-- E-only world interaction (see TaskStationHandler's ClickablePrompt comment for
+	-- the rule + mobile debt): a stray click filing a report is the same
+	-- click-through misfire class.
+	prompt.ClickablePrompt = false
+
 	local connection
 	connection = prompt.Triggered:Connect(function(player)
 		local victimName = root:GetAttribute("VictimName")

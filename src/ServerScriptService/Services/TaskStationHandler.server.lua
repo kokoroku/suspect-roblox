@@ -58,9 +58,27 @@ local function setupStation(part)
 	-- window client-side. HoldDuration 0 = instant trigger on press.
 	prompt.HoldDuration = 0
 
+	-- WORLD PROMPTS ARE E-ONLY BY DESIGN. Mouse clicks must NEVER start a task.
+	-- ProximityPrompts are mouse-clickable by default, and GUI frames don't sink
+	-- clicks, so clicks inside an open task window were leaking through to the
+	-- station prompt behind it and RE-TRIGGERING it, restarting the session and
+	-- rebuilding the minigame from zero. ClickablePrompt = false kills that here.
+	-- KNOWN MOBILE DEBT: touch devices trigger a ProximityPrompt by TAPPING it, so
+	-- with this off, mobile clients cannot start tasks until a per-platform input
+	-- pass re-enables ClickablePrompt for TOUCH clients only.
+	prompt.ClickablePrompt = false
+
 	TaskManager.RegisterTaskId(part.Name, part, taskType)
 
 	prompt.Triggered:Connect(function(player)
+		-- Re-triggering an already-open task is a no-op, never a restart. The
+		-- TaskCancel remote clears the session when the window closes, so a live
+		-- session here means the window is genuinely still open - this can't wedge
+		-- the station.
+		if TaskManager.HasSession(player, part.Name) then
+			return
+		end
+
 		-- Prompts stay physically visible; this is the server-side gate stopping
 		-- task completion during meetings (players frozen at a station can still
 		-- hold E) and during the end screen.

@@ -133,6 +133,20 @@ Remotes.Get(Remotes.Names.TaskFinished).OnServerEvent:Connect(function(player, t
 	end
 end)
 
+-- ============================================================
+-- TaskCancel - client says its task window closed WITHOUT finishing; drop the
+-- open session so the station can be retriggered cleanly. Always safe - no state
+-- gates; CancelSession only clears a matching open session and never touches
+-- assignments or done-state.
+-- ============================================================
+Remotes.Get(Remotes.Names.TaskCancel).OnServerEvent:Connect(function(player, taskId)
+	if type(taskId) ~= "string" then
+		warn(player.Name, "sent an invalid TaskCancel id")
+		return
+	end
+	TaskManager.CancelSession(player, taskId)
+end)
+
 -- TaskManager cannot require MeetingSystem (cycle via MatchService), so the
 -- composition root wires this reaction: drop every open task session when a
 -- meeting starts (players frozen at a station can't keep a window alive).
