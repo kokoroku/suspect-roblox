@@ -15,6 +15,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
+local UIStyle = require(ReplicatedStorage.Modules.UIStyle)
 local matchEndedEvent = Remotes.Get(Remotes.Names.MatchEnded)
 
 local localPlayer = Players.LocalPlayer
@@ -35,24 +36,25 @@ frame.BackgroundColor3 = Color3.new(0, 0, 0)
 frame.BackgroundTransparency = 0.35
 frame.Parent = screenGui
 
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 80)
-title.Position = UDim2.new(0, 0, 0.4, 0)
-title.BackgroundTransparency = 1
-title.Font = Enum.Font.GothamBold
-title.TextScaled = true
-title.Text = ""
-title.Parent = frame
+-- The verdict card, centered over the dimmed screen.
+local verdictPanel = UIStyle.MakePanel(
+	frame,
+	UDim2.fromOffset(440, 130),
+	UDim2.new(0.5, 0, 0.5, 0),
+	Vector2.new(0.5, 0.5)
+)
 
-local subLabel = Instance.new("TextLabel")
-subLabel.Size = UDim2.new(1, 0, 0, 30)
-subLabel.Position = UDim2.new(0, 0, 0.4, 80)
-subLabel.BackgroundTransparency = 1
-subLabel.Font = Enum.Font.Gotham
-subLabel.TextColor3 = Color3.new(1, 1, 1)
-subLabel.TextScaled = true
-subLabel.Text = "Next round starting soon..."
-subLabel.Parent = frame
+local title = UIStyle.MakeLabel(verdictPanel, "")
+title.Size = UDim2.new(1, -UIStyle.Pad * 2, 0, 56)
+title.Position = UDim2.new(0, UIStyle.Pad, 0, 22)
+title.Font = UIStyle.HeaderFont
+title.TextSize = 40
+title.TextXAlignment = Enum.TextXAlignment.Center
+
+local subLabel = UIStyle.MakeLabel(verdictPanel, "Next round starting soon...", true)
+subLabel.Size = UDim2.new(1, -UIStyle.Pad * 2, 0, 24)
+subLabel.Position = UDim2.new(0, UIStyle.Pad, 0, 84)
+subLabel.TextXAlignment = Enum.TextXAlignment.Center
 
 -- Incremented on every MatchEnded so a stale hide timer can't close a newer screen.
 local showToken = 0
@@ -60,13 +62,13 @@ local showToken = 0
 matchEndedEvent.OnClientEvent:Connect(function(winner, duration)
 	if winner == "CrewWin" then
 		title.Text = "CREW WINS!"
-		title.TextColor3 = Color3.fromRGB(120, 220, 120)
+		title.TextColor3 = UIStyle.Colors.Positive
 	elseif winner == "ImpostorWin" then
 		title.Text = "IMPOSTORS WIN!"
-		title.TextColor3 = Color3.fromRGB(220, 80, 80)
+		title.TextColor3 = UIStyle.Colors.Negative
 	else
 		title.Text = tostring(winner)
-		title.TextColor3 = Color3.new(1, 1, 1)
+		title.TextColor3 = UIStyle.Colors.TextPrimary
 	end
 
 	screenGui.Enabled = true

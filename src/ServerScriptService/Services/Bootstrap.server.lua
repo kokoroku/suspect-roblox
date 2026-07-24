@@ -23,6 +23,7 @@ local KillSystem = require(script.Parent.KillSystem)
 local MeetingSystem = require(script.Parent.MeetingSystem)
 local MatchService = require(script.Parent.MatchService)
 local TaskManager = require(script.Parent.TaskManager)
+local SabotageService = require(script.Parent.SabotageService)
 local DebugFlags = require(script.Parent.DebugFlags)
 -- Side-effect service: requiring it is what activates its dead-player broadcasts.
 local SpectateService = require(script.Parent.SpectateService)
@@ -118,10 +119,20 @@ end)
 -- ============================================================
 -- TaskFinished - client says its minigame window succeeded; server validates
 -- the open session (see TaskManager.TryFinish) before crediting the task.
+--
+-- Sabotage FIX sessions and normal TASK sessions share the exact same client
+-- pipeline, so the routing decision here is "who owns this player's session":
+-- SabotageService first, TaskManager otherwise. The client never distinguishes.
 -- ============================================================
 Remotes.Get(Remotes.Names.TaskFinished).OnServerEvent:Connect(function(player, taskId)
 	if type(taskId) ~= "string" then
 		warn(player.Name, "sent an invalid TaskFinished id")
+		return
+	end
+
+	if SabotageService.HasFixSession(player, taskId) then
+		local ok, reason = SabotageService.TryFinishFix(player, taskId)
+		Remotes.Get(Remotes.Names.TaskResult):FireClient(player, taskId, ok, reason)
 		return
 	end
 
@@ -144,6 +155,9 @@ Remotes.Get(Remotes.Names.TaskCancel).OnServerEvent:Connect(function(player, tas
 		warn(player.Name, "sent an invalid TaskCancel id")
 		return
 	end
+	-- Same session routing as TaskFinished; both calls no-op on a mismatch, so
+	-- running the fix one first is safe regardless of which kind of window closed.
+	SabotageService.CancelFix(player, taskId)
 	TaskManager.CancelSession(player, taskId)
 end)
 
@@ -155,8 +169,29 @@ MeetingSystem.OnMeetingStart(function()
 end)
 
 -- ============================================================
--- DebugToggleLights - test key (P) flips lights-out until the real sabotage
--- system exists. Gated server-side by DebugFlags; the client always fires it.
+-- TriggerSabotage - impostor asks for a sabotage. Every gate (role, alive,
+-- match state, meeting, cooldown, already-active) lives in SabotageService.Trigger.
+-- ============================================================
+Remotes.Get(Remotes.Names.TriggerSabotage).OnServerEvent:Connect(function(player, sabotageType)
+	if type(sabotageType) ~= "string" then
+		warn(player.Name, "sent an invalid TriggerSabotage type")
+		return
+	end
+
+	local ok, reason = SabotageService.Trigger(player, sabotageType)
+	if not ok then
+		-- Rejections go to JUST this player (the sabotage panel shows the reason);
+		-- successes are announced by the service's own broadcast to everyone.
+		Remotes.Get(Remotes.Names.SabotageStatus):FireClient(player, { rejected = true, reason = reason })
+		warn(player.Name, "failed to trigger sabotage", sabotageType, "-", reason)
+	end
+end)
+
+-- ============================================================
+-- DebugToggleLights - test key (P) flips lights-out directly, bypassing the
+-- sabotage flow (SabotageService is the real trigger). A test shortcut onto the
+-- same LightsSystem.SetLightsOut call, gated server-side by DebugFlags; the
+-- client always fires it.
 -- ============================================================
 Remotes.Get(Remotes.Names.DebugToggleLights).OnServerEvent:Connect(function(player)
 	if not DebugFlags.LIGHTS_TEST_CONTROLS then

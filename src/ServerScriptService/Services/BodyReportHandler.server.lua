@@ -10,6 +10,7 @@ local CollectionService = game:GetService("CollectionService")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local MeetingSystem = require(ServerScriptService.Services.MeetingSystem)
+local SabotageService = require(ServerScriptService.Services.SabotageService)
 
 local TAG = "DeadBody"
 
@@ -30,6 +31,14 @@ local function setupBody(root)
 
 	local connection
 	connection = prompt.Triggered:Connect(function(player)
+		-- Only a CRITICAL sabotage blocks reporting - the body keeps until the
+		-- boiler is dealt with. A non-critical sabotage (lights) must not stop a
+		-- report, or an impostor could sabotage to sit on a corpse indefinitely.
+		if SabotageService.IsCriticalActive() then
+			warn(player.Name, "failed to report body -", "FixTheBoiler")
+			return
+		end
+
 		local victimName = root:GetAttribute("VictimName")
 		local success, reason = MeetingSystem.StartMeeting(player, "ReportBody", victimName)
 		if success then

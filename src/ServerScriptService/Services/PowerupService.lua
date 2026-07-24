@@ -57,10 +57,14 @@ PowerupService.Definitions = {
 		rarity = "Common",
 		weight = 30,
 		cooldown = 30,
+		-- fogEnd: how far the BEARER sees in the dark (client fog, applied by
+		-- PowerupFX). glowRange: the head light EVERYONE sees them by.
+		-- Tier 3's fogEnd equals the impostor's dark vision - full parity with an
+		-- impostor's sight, bought with a loadout slot and with being visible.
 		tiers = {
-			{ range = 20 },
-			{ range = 30 },
-			{ range = 40 },
+			{ fogEnd = 45, glowRange = 16 },
+			{ fogEnd = 65, glowRange = 22 },
+			{ fogEnd = 90, glowRange = 30 },
 		},
 	},
 	Invisibility = {
@@ -372,13 +376,15 @@ local effectHandlers = {
 			return false, "NoCharacter"
 		end
 
-		-- A server-side light is deliberately visible to EVERYONE (impostor
-		-- included) - using it is a beacon.
-		local light = Instance.new("SpotLight")
-		light.Brightness = 5
-		light.Angle = 60
-		light.Range = stats.range
-		light.Face = Enum.NormalId.Front
+		-- A server-side light replicates to EVERYONE (impostor included), so the
+		-- bearer glows in the dark like a held lantern rather than shining a beam.
+		-- That beacon risk IS the trade-off: you see further, and everyone sees
+		-- exactly where you are.
+		local light = Instance.new("PointLight")
+		light.Range = stats.glowRange
+		light.Brightness = 1.6
+		light.Color = Color3.fromRGB(255, 220, 160)
+		light.Shadows = false
 		light.Parent = head
 
 		local entry = { light = light }
@@ -390,7 +396,7 @@ local effectHandlers = {
 		end
 		startEffect(player, "Flashlight", entry)
 
-		Remotes.Get(Remotes.Names.PowerupEffect):FireClient(player, "Flashlight", "Start", { range = stats.range })
+		Remotes.Get(Remotes.Names.PowerupEffect):FireClient(player, "Flashlight", "Start", { fogEnd = stats.fogEnd })
 		-- No duration - it ends when the lights come back on (OnLightsChanged) or
 		-- on meeting/death/match reset.
 		return true

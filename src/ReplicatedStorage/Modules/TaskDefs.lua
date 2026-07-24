@@ -44,6 +44,17 @@ TaskDefs.Types = {
 	-- minDuration: legit clears run ~15-30s; pure anti-exploit floor.
 	FlowRoute = { displayName = "Mend the Boiler Pipes", length = "Long", module = "FlowRoute", minDuration = 6, config = {} },
 
+	-- ---- Fix minigames (sabotage stations) ----
+	-- These are NEVER assignable as tasks: task pools are built from the stations
+	-- TaskManager registers, and fix stations register with SabotageService
+	-- instead. They live here so the shared client task pipeline (TaskOpen ->
+	-- module -> TaskFinished) can resolve their module/minDuration like any task.
+	-- minDuration: puzzle floor; legit solves run ~4-10s, so this stays a pure
+	-- anti-exploit floor.
+	FixSwitches = { displayName = "Reset the Fuse Box", length = "Short", module = "FixSwitches", minDuration = 2, config = {} },
+	-- minDuration: anti-exploit floor only.
+	FixValve = { displayName = "Vent the Boiler", length = "Short", module = "FixValve", minDuration = 2, config = {} },
+
 	-- ---- Fallback ----
 	Generic = { displayName = "Do the Task", length = "Short", module = "Placeholder", minDuration = 1, config = {} },
 }

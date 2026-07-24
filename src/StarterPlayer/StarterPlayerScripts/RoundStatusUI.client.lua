@@ -13,6 +13,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
+local UIStyle = require(ReplicatedStorage.Modules.UIStyle)
 local roundStatusEvent = Remotes.Get(Remotes.Names.RoundStatus)
 
 local localPlayer = Players.LocalPlayer
@@ -23,18 +24,21 @@ screenGui.Name = "RoundStatusGui"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = playerGui
 
-local label = Instance.new("TextLabel")
-label.AnchorPoint = Vector2.new(0.5, 0)
-label.Position = UDim2.new(0.5, 0, 0, 8)
-label.Size = UDim2.new(0, 420, 0, 28)
-label.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-label.BackgroundTransparency = 0.3
-label.TextColor3 = Color3.new(1, 1, 1)
-label.Font = Enum.Font.Gotham
-label.TextScaled = true
-label.Text = ""
-label.Visible = false
-label.Parent = screenGui
+-- Top-center pill. SabotageBanner sits directly beneath it.
+local panel = UIStyle.MakePanel(
+	screenGui,
+	UDim2.fromOffset(420, 30),
+	UDim2.new(0.5, 0, 0, 10),
+	Vector2.new(0.5, 0)
+)
+panel.Visible = false
+
+local label = UIStyle.MakeLabel(panel, "")
+label.Size = UDim2.new(1, -UIStyle.Pad * 2, 1, 0)
+label.Position = UDim2.new(0, UIStyle.Pad, 0, 0)
+label.TextXAlignment = Enum.TextXAlignment.Center
+-- Floats over the 3D world, so it takes the stronger banner outline.
+label.TextStrokeTransparency = UIStyle.BannerStrokeTransparency
 
 -- Remembered from a personal InProgress snapshot; cleared when we get a body.
 local spectator = false
@@ -42,23 +46,23 @@ local spectator = false
 roundStatusEvent.OnClientEvent:Connect(function(data)
 	if data.state == "Waiting" then
 		label.Text = "Waiting for players (" .. tostring(data.playersPresent) .. "/" .. tostring(data.playersNeeded) .. ")"
-		label.Visible = true
+		panel.Visible = true
 	elseif data.state == "Intermission" then
 		label.Text = "Match starting in " .. tostring(data.secondsLeft) .. "s"
-		label.Visible = true
+		panel.Visible = true
 	elseif data.state == "InProgress" then
 		if data.spectator then
 			spectator = true
 		end
 		if spectator then
 			label.Text = "Match in progress - you'll join the next round"
-			label.Visible = true
+			panel.Visible = true
 		else
-			label.Visible = false
+			panel.Visible = false
 		end
 	else
 		-- "Ended" (EndScreenUI owns the end screen) or anything unexpected.
-		label.Visible = false
+		panel.Visible = false
 	end
 end)
 

@@ -16,6 +16,7 @@ local CollectionService = game:GetService("CollectionService")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local MeetingSystem = require(ServerScriptService.Services.MeetingSystem)
+local SabotageService = require(ServerScriptService.Services.SabotageService)
 
 local TAG = "EmergencyButton"
 
@@ -38,6 +39,13 @@ local function setupButton(part)
 	prompt.ClickablePrompt = false
 
 	prompt.Triggered:Connect(function(player)
+		-- An active sabotage outranks politics: the crew must deal with it before
+		-- anyone can call the room to a vote.
+		if SabotageService.IsActive() then
+			warn(player.Name, "failed to call emergency meeting", "-", "SabotageActive")
+			return
+		end
+
 		local success, reason = MeetingSystem.StartMeeting(player, "Emergency", nil)
 		if not success then
 			warn(player.Name, "failed to call emergency meeting", "-", reason)

@@ -1,8 +1,8 @@
 --[[
 	PowerupHUD.client.lua
 	Bottom-right two-slot powerup HUD, built entirely in code (no manually placed
-	Studio GUI objects) so it stays version-controlled. Deliberately rough - full
-	styling comes in the UI rehaul pass.
+	Studio GUI objects) so it stays version-controlled. Styled from UIStyle -
+	deliberately plain until the art pass, which re-skins UIStyle, not this file.
 
 	Lifecycle:
 	  - LoadoutApplied (fired at match start) fills the two slots with the active
@@ -17,6 +17,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
+local UIStyle = require(ReplicatedStorage.Modules.UIStyle)
 local usePowerupEvent = Remotes.Get(Remotes.Names.UsePowerup)
 local powerupUseResultEvent = Remotes.Get(Remotes.Names.PowerupUseResult)
 local loadoutAppliedEvent = Remotes.Get(Remotes.Names.LoadoutApplied)
@@ -53,36 +54,47 @@ screenGui.ResetOnSpawn = false
 screenGui.Enabled = true
 screenGui.Parent = playerGui
 
+local SLOT_SIZE = 64
+local SLOT_GAP = 8
+local EDGE = 10 -- distance from the bottom-right corner
+
+-- Slot strip, hugging the bottom-right corner.
 local container = Instance.new("Frame")
-container.Size = UDim2.new(0, 246, 0, 100)
-container.Position = UDim2.new(1, -256, 1, -110)
+container.AnchorPoint = Vector2.new(1, 1)
+container.Size = UDim2.fromOffset(SLOT_SIZE * 2 + SLOT_GAP, SLOT_SIZE)
+container.Position = UDim2.new(1, -EDGE, 1, -EDGE)
 container.BackgroundTransparency = 1
 container.Parent = screenGui
 
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1, 0, 0, 24)
-statusLabel.Position = UDim2.new(0, 0, 0, 0)
-statusLabel.BackgroundTransparency = 1
-statusLabel.TextColor3 = Color3.fromRGB(240, 200, 120)
-statusLabel.Font = Enum.Font.Gotham
-statusLabel.TextScaled = true
+-- Failure-reason line, directly above the slots.
+local statusLabel = UIStyle.MakeLabel(screenGui, "", true)
+statusLabel.AnchorPoint = Vector2.new(1, 1)
+statusLabel.Size = UDim2.fromOffset(240, 20)
+statusLabel.Position = UDim2.new(1, -EDGE, 1, -(EDGE + SLOT_SIZE + 4))
+statusLabel.TextColor3 = UIStyle.Colors.Accent
 statusLabel.TextXAlignment = Enum.TextXAlignment.Right
-statusLabel.Text = ""
 statusLabel.Visible = false
-statusLabel.Parent = container
 
 -- Separate from statusLabel so a use-failure flash can't overwrite a reveal.
-local seerToast = Instance.new("TextLabel")
-seerToast.Size = UDim2.new(1, 0, 0, 26)
-seerToast.Position = UDim2.new(0, 0, 0, -30)
-seerToast.BackgroundTransparency = 1
-seerToast.TextColor3 = Color3.fromRGB(140, 220, 240)
-seerToast.Font = Enum.Font.GothamBold
-seerToast.TextScaled = true
-seerToast.TextXAlignment = Enum.TextXAlignment.Right
-seerToast.Text = ""
+local seerToast = UIStyle.MakePanel(
+	screenGui,
+	UDim2.fromOffset(240, 26),
+	UDim2.new(1, -EDGE, 1, -(EDGE + SLOT_SIZE + 28)),
+	Vector2.new(1, 1)
+)
 seerToast.Visible = false
-seerToast.Parent = container
+
+local seerStroke = seerToast:FindFirstChildOfClass("UIStroke")
+if seerStroke then
+	seerStroke.Color = UIStyle.Colors.Accent
+end
+
+local seerLabel = UIStyle.MakeLabel(seerToast, "")
+seerLabel.Size = UDim2.new(1, -UIStyle.Pad * 2, 1, 0)
+seerLabel.Position = UDim2.new(0, UIStyle.Pad, 0, 0)
+seerLabel.Font = UIStyle.HeaderFont
+seerLabel.TextSize = 12
+seerLabel.TextXAlignment = Enum.TextXAlignment.Right
 
 -- Fire UsePowerup for a slot if it holds a powerup.
 local function useSlot(index)
@@ -93,46 +105,73 @@ local function useSlot(index)
 end
 
 local function makeSlot(index, keyText)
+	local slot = UIStyle.MakePanel(
+		container,
+		UDim2.fromOffset(SLOT_SIZE, SLOT_SIZE),
+		UDim2.fromOffset((index - 1) * (SLOT_SIZE + SLOT_GAP), 0),
+		Vector2.new(0, 0)
+	)
+
+	local nameLabel = UIStyle.MakeLabel(slot, "Empty")
+	nameLabel.Size = UDim2.new(1, -8, 1, -20)
+	nameLabel.Position = UDim2.new(0, 4, 0, 16)
+	nameLabel.TextSize = 11
+	nameLabel.TextWrapped = true
+	nameLabel.TextXAlignment = Enum.TextXAlignment.Center
+
+	-- Keybind badge: a dark key cap in the slot's top-left corner. Padded so the
+	-- scaled digit never touches an edge.
+	local keyBadge = UIStyle.MakeLabel(slot, keyText)
+	keyBadge.Size = UDim2.fromOffset(20, 20)
+	keyBadge.Position = UDim2.fromOffset(4, 4)
+	keyBadge.BackgroundTransparency = 0
+	keyBadge.BackgroundColor3 = UIStyle.Colors.Bg
+	keyBadge.FontFace = UIStyle.HeaderFontFace
+	keyBadge.TextScaled = true
+	keyBadge.TextColor3 = UIStyle.Colors.Accent
+	keyBadge.TextXAlignment = Enum.TextXAlignment.Center
+	keyBadge.TextYAlignment = Enum.TextYAlignment.Center
+
+	local badgeCorner = Instance.new("UICorner")
+	badgeCorner.CornerRadius = UDim.new(0, 4)
+	badgeCorner.Parent = keyBadge -- destroyed with the badge
+
+	local badgeStroke = Instance.new("UIStroke")
+	badgeStroke.Thickness = 1
+	badgeStroke.Color = UIStyle.Colors.Accent
+	badgeStroke.Parent = keyBadge -- destroyed with the badge
+
+	local badgePadding = Instance.new("UIPadding")
+	badgePadding.PaddingTop = UDim.new(0, 3)
+	badgePadding.PaddingBottom = UDim.new(0, 3)
+	badgePadding.PaddingLeft = UDim.new(0, 3)
+	badgePadding.PaddingRight = UDim.new(0, 3)
+	badgePadding.Parent = keyBadge -- destroyed with the badge
+
+	-- Click target over the whole slot (a Frame can't take MouseButton1Click).
 	local button = Instance.new("TextButton")
-	button.Size = UDim2.new(0, 120, 0, 70)
-	button.Position = UDim2.new(0, (index - 1) * 126, 0, 30)
-	button.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-	button.BackgroundTransparency = 0.1
+	button.Size = UDim2.new(1, 0, 1, 0)
+	button.BackgroundTransparency = 1
 	button.AutoButtonColor = false
 	button.Text = ""
-	button.Parent = container
+	button.ZIndex = 5
+	button.Parent = slot
 
-	local nameLabel = Instance.new("TextLabel")
-	nameLabel.Size = UDim2.new(1, -6, 0, 42)
-	nameLabel.Position = UDim2.new(0, 3, 0, 3)
-	nameLabel.BackgroundTransparency = 1
-	nameLabel.TextColor3 = Color3.new(1, 1, 1)
-	nameLabel.Font = Enum.Font.Gotham
-	nameLabel.TextScaled = true
-	nameLabel.TextWrapped = true
-	nameLabel.Text = "Empty"
-	nameLabel.Parent = button
-
-	local keyLabel = Instance.new("TextLabel")
-	keyLabel.Size = UDim2.new(1, -6, 0, 22)
-	keyLabel.Position = UDim2.new(0, 3, 1, -24)
-	keyLabel.BackgroundTransparency = 1
-	keyLabel.TextColor3 = Color3.fromRGB(180, 180, 180)
-	keyLabel.Font = Enum.Font.GothamBold
-	keyLabel.TextScaled = true
-	keyLabel.Text = keyText
-	keyLabel.Parent = button
-
-	local cooldownLabel = Instance.new("TextLabel")
+	-- Doubles as the cooldown darkener AND the countdown number. Above the click
+	-- target so it reads on top; labels don't sink input, so clicks still land.
+	local cooldownLabel = UIStyle.MakeLabel(slot, "")
 	cooldownLabel.Size = UDim2.new(1, 0, 1, 0)
-	cooldownLabel.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	cooldownLabel.BackgroundTransparency = 0.5
-	cooldownLabel.TextColor3 = Color3.new(1, 1, 1)
-	cooldownLabel.Font = Enum.Font.GothamBold
-	cooldownLabel.TextScaled = true
-	cooldownLabel.Text = ""
+	cooldownLabel.BackgroundTransparency = 0.35
+	cooldownLabel.BackgroundColor3 = UIStyle.Colors.Bg
+	cooldownLabel.Font = UIStyle.HeaderFont
+	cooldownLabel.TextSize = 22
+	cooldownLabel.TextXAlignment = Enum.TextXAlignment.Center
 	cooldownLabel.Visible = false
-	cooldownLabel.Parent = button
+	cooldownLabel.ZIndex = 6
+
+	local cooldownCorner = Instance.new("UICorner")
+	cooldownCorner.CornerRadius = UDim.new(0, UIStyle.Corner)
+	cooldownCorner.Parent = cooldownLabel -- destroyed with the overlay
 
 	slots[index] = { nameLabel = nameLabel, cooldownLabel = cooldownLabel, token = 0 }
 
@@ -141,8 +180,8 @@ local function makeSlot(index, keyText)
 	end)
 end
 
-makeSlot(1, "[1]")
-makeSlot(2, "[2]")
+makeSlot(1, "1")
+makeSlot(2, "2")
 
 -- ============================================================
 -- Feedback helpers
@@ -233,7 +272,7 @@ end)
 -- Seer reveal - shown longer than a status flash and on its own label.
 local seerToastToken = 0
 seerResultEvent.OnClientEvent:Connect(function(name, role)
-	seerToast.Text = "Seer: " .. tostring(name) .. " is " .. tostring(role)
+	seerLabel.Text = "Seer: " .. tostring(name) .. " is " .. tostring(role)
 	seerToast.Visible = true
 	seerToastToken = seerToastToken + 1
 	local myToken = seerToastToken

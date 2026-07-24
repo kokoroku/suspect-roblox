@@ -22,6 +22,7 @@ Remotes.Names = {
 	DebugToggleLights = "DebugToggleLights",
 	TaskFinished = "TaskFinished",
 	TaskCancel = "TaskCancel",
+	TriggerSabotage = "TriggerSabotage",
 
 	-- Server -> Client notifications
 	RoleAssigned = "RoleAssigned",
@@ -43,6 +44,7 @@ Remotes.Names = {
 	PowerupEffect = "PowerupEffect",
 	SeerResult = "SeerResult",
 	LightsChanged = "LightsChanged",
+	SabotageStatus = "SabotageStatus",
 	-- DebugToggleLights, PowerupEffect, SeerResult and LightsChanged are wired
 	-- by the effects/lights work that follows this change - declared now so this
 	-- file is only touched once.

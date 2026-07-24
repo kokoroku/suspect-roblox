@@ -122,6 +122,15 @@ function MatchService.EvaluateWinCondition(trigger)
 	end
 end
 
+-- End the match on a NON-COUNT win condition (currently: a sabotage timer
+-- running out). Everything driven by alive/task counts still flows through
+-- EvaluateWinCondition - this is the door for outcomes those counts can't see.
+function MatchService.ForceEnd(winner)
+	if MatchService.GetState() == "InProgress" then
+		MatchService.EndMatch(winner)
+	end
+end
+
 function MatchService.EndMatch(winner)
 	matchState = "Ended"
 

@@ -21,8 +21,7 @@ local LoadoutService = {}
 
 local MAX_SLOTS = 2
 
--- player -> { powerupId, ... } staged for the NEXT match (editable whenever the
--- player is not alive-in-match).
+-- player -> { powerupId, ... } staged for the NEXT match (editable at ANY time).
 local pendingLoadouts = {}
 -- player -> { powerupId, ... } locked in for the CURRENT match. Written ONLY at
 -- match start from the pending set - nothing during a match ever changes it.
@@ -30,15 +29,10 @@ local activeLoadouts = {}
 
 -- Returns true/false, and an error reason on failure.
 function LoadoutService.SetLoadout(player, powerupIds)
-	-- An ALIVE player's loadout is locked for the full match (start -> win
-	-- condition), through every meeting. Ghosts and not-yet-in-round players may
-	-- re-stage their PENDING loadout anytime - it only ever takes effect at the
-	-- next match start, so nothing about the current match can change. This gate
-	-- becomes lobby+ghost editing once the lobby exists.
-	if MatchService.GetState() == "InProgress" and RoleManager.IsAlive(player) then
-		return false, "AliveInMatch"
-	end
-
+	-- Editing is safe at ANY time by construction: activeLoadouts is written
+	-- exclusively at MatchService.OnMatchStart from pending, so an alive player's
+	-- mid-match save affects only their next match, and a countdown-phase save
+	-- lands in the match about to start. No state gate is needed here at all.
 	if type(powerupIds) ~= "table" or #powerupIds > MAX_SLOTS then
 		return false, "InvalidSlotCount"
 	end

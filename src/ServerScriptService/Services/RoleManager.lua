@@ -89,7 +89,9 @@ function RoleManager.AssignRoles(playersInMatch)
 		playerState[player] = { role = role, alive = true }
 
 		local roleEvent = Remotes.Get(Remotes.Names.RoleAssigned)
-		-- Only tell each player their OWN role - never broadcast this
+		-- Only tell each player their OWN role - never broadcast this. Clients
+		-- need their own role for role-gated UI (the sabotage panel); this
+		-- reveals nothing a client doesn't already act on.
 		roleEvent:FireClient(player, role)
 	end
 end

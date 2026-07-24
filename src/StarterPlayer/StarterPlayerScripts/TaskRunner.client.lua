@@ -267,6 +267,16 @@ playerDiedEvent.OnClientEvent:Connect(function()
 	end
 end)
 
+-- A fix window can still be open when a sabotage timer ends the match (the
+-- boiler countdown running out), so MatchEnded is a close-without-result path
+-- too. The cancel is a harmless no-op server-side once the match is over.
+Remotes.Get(Remotes.Names.MatchEnded).OnClientEvent:Connect(function()
+	if currentTaskId then
+		taskCancelEvent:FireServer(currentTaskId)
+		closeWindow()
+	end
+end)
+
 localPlayer.CharacterAdded:Connect(function()
 	if currentTaskId then
 		-- Non-result close: cancel the open session before hiding.

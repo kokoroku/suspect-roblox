@@ -8,8 +8,9 @@
 	  - Server fires PlayerDied when this player dies. After DEATH_VIEW_DELAY
 	    seconds (long enough to watch your own body drop) spectate engages: the
 	    camera follows a living player and a bottom bar lets you cycle targets
-	    (< / > buttons or Q/E), open a gacha panel, or hit a placeholder
-	    Return to Lobby button.
+	    (< / > buttons or Q/E) or hit a placeholder Return to Lobby button.
+	    (The gacha panel used to live here; it is a tab in the always-available
+	    hub window now - see HubUI.client.lua.)
 	  - The server keeps the target list fresh via SpectateTargetsUpdated (only
 	    ever sent to dead players).
 	  - Spectate ends when the local character respawns (CharacterAdded), which
@@ -21,14 +22,10 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
+local UIStyle = require(ReplicatedStorage.Modules.UIStyle)
 local spectateTargetsEvent = Remotes.Get(Remotes.Names.SpectateTargetsUpdated)
 local playerDiedEvent = Remotes.Get(Remotes.Names.PlayerDied)
 local roundStatusEvent = Remotes.Get(Remotes.Names.RoundStatus)
-local rollGachaEvent = Remotes.Get(Remotes.Names.RollGacha)
-local gachaResultEvent = Remotes.Get(Remotes.Names.GachaResult)
-local upgradePowerupEvent = Remotes.Get(Remotes.Names.UpgradePowerup)
-local upgradeResultEvent = Remotes.Get(Remotes.Names.UpgradeResult)
-local getGachaCatalogFn = Remotes.Get(Remotes.FunctionNames.GetGachaCatalog)
 
 local localPlayer = Players.LocalPlayer
 local playerGui = localPlayer:WaitForChild("PlayerGui")
@@ -51,287 +48,68 @@ screenGui.ResetOnSpawn = false
 screenGui.Enabled = false
 screenGui.Parent = playerGui
 
--- ---- Bottom-center spectate bar ----
-local bar = Instance.new("Frame")
-bar.Size = UDim2.new(0, 620, 0, 50)
-bar.Position = UDim2.new(0.5, -310, 1, -70)
-bar.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-bar.BackgroundTransparency = 0.2
-bar.Parent = screenGui
+-- ---- Ghost control bar, sitting DIRECTLY ABOVE the persistent bottom bar ----
+local bar = UIStyle.MakePanel(
+	screenGui,
+	UDim2.fromOffset(620, 46),
+	UDim2.new(0.5, 0, 1, -56),
+	Vector2.new(0.5, 1)
+)
 
 local barLayout = Instance.new("UIListLayout")
 barLayout.FillDirection = Enum.FillDirection.Horizontal
 barLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 barLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-barLayout.Padding = UDim.new(0, 6)
+barLayout.Padding = UDim.new(0, UIStyle.Pad)
 barLayout.SortOrder = Enum.SortOrder.LayoutOrder
 barLayout.Parent = bar
 
 local function makeBarButton(text, width, order)
-	local button = Instance.new("TextButton")
-	button.Size = UDim2.new(0, width, 0, 38)
+	local button = UIStyle.MakeButton(bar, text)
+	button.Size = UDim2.fromOffset(width, 32)
 	button.LayoutOrder = order
-	button.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-	button.TextColor3 = Color3.new(1, 1, 1)
-	button.Font = Enum.Font.Gotham
-	button.TextScaled = true
-	button.Text = text
-	button.Parent = bar
 	return button
 end
 
-local prevButton = makeBarButton("<", 40, 1)
+local prevButton = makeBarButton("<", 36, 1)
 
-local spectateLabel = Instance.new("TextLabel")
-spectateLabel.Size = UDim2.new(0, 240, 0, 38)
+local spectateLabel = UIStyle.MakeLabel(bar, "Spectating: ...")
+spectateLabel.Size = UDim2.fromOffset(220, 32)
 spectateLabel.LayoutOrder = 2
-spectateLabel.BackgroundTransparency = 1
-spectateLabel.TextColor3 = Color3.new(1, 1, 1)
-spectateLabel.Font = Enum.Font.Gotham
-spectateLabel.TextScaled = true
-spectateLabel.Text = "Spectating: ..."
-spectateLabel.Parent = bar
+spectateLabel.TextXAlignment = Enum.TextXAlignment.Center
 
-local nextButton = makeBarButton(">", 40, 3)
-local gachaButton = makeBarButton("Gacha", 90, 4)
-local lobbyButton = makeBarButton("Return to Lobby", 150, 5)
+local nextButton = makeBarButton(">", 36, 3)
+
+-- The only keybind legend in the game so far - the hub is reachable while dead,
+-- and this bar is the one place a ghost is already looking.
+local hintLabel = UIStyle.MakeLabel(bar, "G - Store   L - Inventory", true)
+hintLabel.Size = UDim2.fromOffset(150, 32)
+hintLabel.LayoutOrder = 4
+hintLabel.TextSize = 12
+hintLabel.TextXAlignment = Enum.TextXAlignment.Center
+
+local lobbyButton = makeBarButton("Return to Lobby", 140, 5)
 
 -- ---- "Lobby coming soon" toast (placeholder feedback) ----
-local toast = Instance.new("TextLabel")
+local toast = UIStyle.MakePanel(
+	screenGui,
+	UDim2.fromOffset(220, 36),
+	UDim2.new(0.5, 0, 1, -110),
+	Vector2.new(0.5, 1)
+)
 toast.Visible = false
-toast.Size = UDim2.new(0, 220, 0, 40)
-toast.Position = UDim2.new(0.5, -110, 1, -120)
-toast.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-toast.BackgroundTransparency = 0.2
-toast.TextColor3 = Color3.new(1, 1, 1)
-toast.Font = Enum.Font.Gotham
-toast.TextScaled = true
-toast.Text = ""
-toast.Parent = screenGui
 
--- ---- Right-side gacha panel (toggled by the Gacha button) ----
-local gachaPanel = Instance.new("Frame")
-gachaPanel.Visible = false
-gachaPanel.Size = UDim2.new(0, 340, 0, 460)
-gachaPanel.Position = UDim2.new(1, -360, 0.5, -230)
-gachaPanel.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-gachaPanel.BackgroundTransparency = 0.1
-gachaPanel.Parent = screenGui
-
-local currencyLabel = Instance.new("TextLabel")
-currencyLabel.Size = UDim2.new(1, -10, 0, 26)
-currencyLabel.Position = UDim2.new(0, 5, 0, 5)
-currencyLabel.BackgroundTransparency = 1
-currencyLabel.TextColor3 = Color3.new(1, 1, 1)
-currencyLabel.Font = Enum.Font.GothamBold
-currencyLabel.TextScaled = true
-currencyLabel.TextXAlignment = Enum.TextXAlignment.Left
-currencyLabel.Text = "Currency: 0"
-currencyLabel.Parent = gachaPanel
-
-local pityLabel = Instance.new("TextLabel")
-pityLabel.Size = UDim2.new(1, -10, 0, 22)
-pityLabel.Position = UDim2.new(0, 5, 0, 33)
-pityLabel.BackgroundTransparency = 1
-pityLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-pityLabel.Font = Enum.Font.Gotham
-pityLabel.TextScaled = true
-pityLabel.TextXAlignment = Enum.TextXAlignment.Left
-pityLabel.Text = "Pity: 0/0"
-pityLabel.Parent = gachaPanel
-
--- One roll button up top - the roll decides WHICH powerup you get.
-local rollButton = Instance.new("TextButton")
-rollButton.Size = UDim2.new(0, 150, 0, 26)
-rollButton.Position = UDim2.new(0, 5, 0, 58)
-rollButton.BackgroundColor3 = Color3.fromRGB(70, 90, 70)
-rollButton.TextColor3 = Color3.new(1, 1, 1)
-rollButton.Font = Enum.Font.GothamBold
-rollButton.TextScaled = true
-rollButton.Text = "Roll (50)"
-rollButton.Parent = gachaPanel
-
-rollButton.MouseButton1Click:Connect(function()
-	rollGachaEvent:FireServer() -- no payload; server picks the powerup
-end)
-
-local rowHolder = Instance.new("ScrollingFrame")
-rowHolder.Size = UDim2.new(1, -10, 1, -135)
-rowHolder.Position = UDim2.new(0, 5, 0, 90)
-rowHolder.BackgroundTransparency = 1
-rowHolder.BorderSizePixel = 0
-rowHolder.CanvasSize = UDim2.new(0, 0, 0, 0)
-rowHolder.AutomaticCanvasSize = Enum.AutomaticSize.Y
-rowHolder.ScrollBarThickness = 6
-rowHolder.Parent = gachaPanel
-
-local rowLayout = Instance.new("UIListLayout")
-rowLayout.Padding = UDim.new(0, 6)
-rowLayout.SortOrder = Enum.SortOrder.LayoutOrder
-rowLayout.Parent = rowHolder
-
-local statusLabel = Instance.new("TextLabel")
-statusLabel.Size = UDim2.new(1, -10, 0, 32)
-statusLabel.Position = UDim2.new(0, 5, 1, -37)
-statusLabel.BackgroundTransparency = 1
-statusLabel.TextColor3 = Color3.fromRGB(220, 220, 120)
-statusLabel.Font = Enum.Font.Gotham
-statusLabel.TextScaled = true
-statusLabel.Text = ""
-statusLabel.Parent = gachaPanel
-
--- ============================================================
--- Gacha panel logic
--- ============================================================
--- Currency label kept live off the replicated attribute - no remote needed.
-local function refreshCurrencyLabel()
-	currencyLabel.Text = "Currency: " .. tostring(localPlayer:GetAttribute("Currency") or 0)
-end
-refreshCurrencyLabel()
-localPlayer:GetAttributeChangedSignal("Currency"):Connect(refreshCurrencyLabel)
-
-local function clearRows()
-	for _, child in ipairs(rowHolder:GetChildren()) do
-		if child:IsA("Frame") then
-			child:Destroy()
-		end
-	end
-end
-
-local RARITY_COLOR = {
-	Common = Color3.fromRGB(180, 180, 180),
-	Rare = Color3.fromRGB(80, 140, 220),
-	Epic = Color3.fromRGB(170, 90, 220),
-}
-
--- Last catalog keyed by powerup id, so the result handlers can resolve a
--- displayName/rarity from just an id. (The catalog is already sorted by the
--- server, so no client-side sorting is needed any more.)
-local catalogById = {}
-
-local function refreshCatalog()
-	local catalog = getGachaCatalogFn:InvokeServer()
-	if not catalog then
-		return
-	end
-
-	refreshCurrencyLabel()
-	pityLabel.Text = "Pity: " .. tostring(catalog.pityRollsUsed) .. "/" .. tostring(catalog.pityThreshold)
-	rollButton.Text = "Roll (" .. tostring(catalog.cost) .. ")"
-
-	catalogById = {}
-	clearRows()
-	for i, entry in ipairs(catalog.powerups) do
-		catalogById[entry.id] = entry
-
-		local row = Instance.new("Frame")
-		row.Size = UDim2.new(1, -6, 0, 72)
-		row.LayoutOrder = i
-		row.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-		row.Parent = rowHolder
-
-		local nameLabel = Instance.new("TextLabel")
-		nameLabel.Size = UDim2.new(1, -10, 0, 22)
-		nameLabel.Position = UDim2.new(0, 5, 0, 3)
-		nameLabel.BackgroundTransparency = 1
-		nameLabel.TextColor3 = RARITY_COLOR[entry.rarity] or Color3.new(1, 1, 1)
-		nameLabel.Font = Enum.Font.GothamBold
-		nameLabel.TextScaled = true
-		nameLabel.TextXAlignment = Enum.TextXAlignment.Left
-		nameLabel.Text = entry.displayName .. "   " .. tostring(entry.percent) .. "%"
-		nameLabel.Parent = row
-
-		local ownedLabel = Instance.new("TextLabel")
-		ownedLabel.Size = UDim2.new(1, -10, 0, 18)
-		ownedLabel.Position = UDim2.new(0, 5, 0, 27)
-		ownedLabel.BackgroundTransparency = 1
-		ownedLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
-		ownedLabel.Font = Enum.Font.Gotham
-		ownedLabel.TextScaled = true
-		ownedLabel.TextXAlignment = Enum.TextXAlignment.Left
-		if entry.tier then
-			ownedLabel.Text = "Tier " .. tostring(entry.tier)
-				.. " - Dupes " .. tostring(entry.duplicates) .. "/" .. tostring(entry.duplicatesNeeded)
-		else
-			ownedLabel.Text = "Not owned"
-		end
-		ownedLabel.Parent = row
-
-		-- Upgrade only when owned, enough duplicates banked, and below max tier.
-		if entry.tier and entry.duplicates >= entry.duplicatesNeeded and entry.tier < entry.maxTier then
-			local upgradeButton = Instance.new("TextButton")
-			upgradeButton.Size = UDim2.new(0, 130, 0, 20)
-			upgradeButton.Position = UDim2.new(0, 5, 0, 48)
-			upgradeButton.BackgroundColor3 = Color3.fromRGB(90, 80, 60)
-			upgradeButton.TextColor3 = Color3.new(1, 1, 1)
-			upgradeButton.Font = Enum.Font.Gotham
-			upgradeButton.TextScaled = true
-			upgradeButton.Text = "Upgrade"
-			upgradeButton.Parent = row
-
-			upgradeButton.MouseButton1Click:Connect(function()
-				upgradePowerupEvent:FireServer(entry.id)
-			end)
-		end
-	end
-end
-
-gachaButton.MouseButton1Click:Connect(function()
-	gachaPanel.Visible = not gachaPanel.Visible
-	if gachaPanel.Visible then
-		-- Refresh invokes the server (yields) - spawn so the click handler returns.
-		task.spawn(refreshCatalog)
-	end
-end)
-
-gachaResultEvent.OnClientEvent:Connect(function(success, resultOrError, powerupId, rollStatus)
-	if not success then
-		if resultOrError == "InsufficientCurrency" then
-			statusLabel.Text = "Not enough currency"
-		else
-			statusLabel.Text = tostring(resultOrError)
-		end
-	else
-		local entry = catalogById[powerupId]
-		local displayName = entry and entry.displayName or tostring(powerupId)
-		if rollStatus == "New" then
-			local rarity = entry and entry.rarity or "?"
-			statusLabel.Text = "New unlock - " .. displayName .. " (" .. tostring(rarity) .. ")!"
-		elseif rollStatus == "Duplicate" then
-			statusLabel.Text = "Duplicate - " .. displayName
-		else
-			statusLabel.Text = "Rolled " .. displayName
-		end
-	end
-
-	-- Re-run so tier/duplicate progress + pity reflect the roll.
-	task.spawn(refreshCatalog)
-end)
-
-upgradeResultEvent.OnClientEvent:Connect(function(powerupId, success, tierOrReason)
-	local entry = catalogById[powerupId]
-	local displayName = entry and entry.displayName or tostring(powerupId)
-	if success then
-		statusLabel.Text = displayName .. " upgraded to Tier " .. tostring(tierOrReason) .. "!"
-	elseif tierOrReason == "NotEnoughDuplicates" then
-		statusLabel.Text = "Not enough duplicates"
-	elseif tierOrReason == "MaxTier" then
-		statusLabel.Text = "Already at max tier"
-	elseif tierOrReason == "NotOwned" then
-		statusLabel.Text = "You don't own that"
-	else
-		statusLabel.Text = tostring(tierOrReason)
-	end
-
-	task.spawn(refreshCatalog)
-end)
+local toastLabel = UIStyle.MakeLabel(toast, "")
+toastLabel.Size = UDim2.new(1, -UIStyle.Pad * 2, 1, 0)
+toastLabel.Position = UDim2.new(0, UIStyle.Pad, 0, 0)
+toastLabel.TextXAlignment = Enum.TextXAlignment.Center
 
 -- PLACEHOLDER: Return to Lobby stands in for the future lobby teleport
 -- (TeleportService). Replace this toast with the real teleport flow once the
 -- lobby place exists.
 local lobbyToastToken = 0
 lobbyButton.MouseButton1Click:Connect(function()
-	toast.Text = "Lobby coming soon"
+	toastLabel.Text = "Lobby coming soon"
 	toast.Visible = true
 	lobbyToastToken = lobbyToastToken + 1
 	local myToken = lobbyToastToken
@@ -452,7 +230,6 @@ localPlayer.CharacterAdded:Connect(function(character)
 	deathToken = deathToken + 1 -- cancel any pending death-view timer
 	spectating = false
 	screenGui.Enabled = false
-	gachaPanel.Visible = false
 
 	local humanoid = character:WaitForChild("Humanoid")
 	workspace.CurrentCamera.CameraSubject = humanoid
