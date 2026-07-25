@@ -47,6 +47,16 @@ function MatchService.OnMatchStart(callback)
 	table.insert(onMatchStartCallbacks, callback)
 end
 
+-- The crew's victory objective, behind a swappable seam. fn() -> boolean, true
+-- when the crew objective is complete. The default (set at the bottom of this
+-- file) is today's task-completion computation, verbatim. Phase 1 swaps in a new
+-- provider without touching EvaluateWinCondition - see the PHASE 1 SEAM comment.
+local crewObjectiveProvider = nil
+
+function MatchService.SetCrewObjectiveProvider(fn)
+	crewObjectiveProvider = fn
+end
+
 -- Builds the RoundStatus payload for the CURRENT state.
 local function statusPayload()
 	local payload = { state = matchState }
@@ -96,11 +106,7 @@ function MatchService.EvaluateWinCondition(trigger)
 		return
 	end
 
-	local total = TaskManager.GetTotalCount()
-	-- nil = "no tasks exist this match, the task clause must not fire" -
-	-- CheckWinCondition already treats nil that way. Guards the zero-stations
-	-- case from instantly ending every match.
-	local tasksRemaining = total > 0 and TaskManager.GetRemainingCount() or nil
+	local objectiveComplete = crewObjectiveProvider()
 
 	-- Completing a task never changes alive counts, so it must never be able to
 	-- hand impostors a parity (impostors >= crew) win. This also keeps 2-player
@@ -109,7 +115,7 @@ function MatchService.EvaluateWinCondition(trigger)
 	-- as an impostor win.
 	local includeParity = trigger ~= "TaskCompleted"
 
-	local winner = RoleManager.CheckWinCondition(tasksRemaining, includeParity)
+	local winner = RoleManager.CheckWinCondition(objectiveComplete, includeParity)
 
 	if winner and DebugFlags.ALL_IMPOSTORS then
 		-- ALL_IMPOSTORS mode exists to free-test kills and meetings; ending on
@@ -232,6 +238,25 @@ function MatchService.StartRoundLoop()
 		end
 	end)
 end
+
+-- ============================================================================
+-- PHASE 1 SEAM - RitualService replaces this provider with brazier/Convergence
+-- completion, and the TaskCompleted trigger (the OnTaskCompleted hook below) is
+-- removed then. Until that day, tasks win matches EXACTLY as they always have:
+-- the body below is the verbatim task-completion computation that used to live
+-- inline in EvaluateWinCondition. nil total = "no tasks exist this match, the
+-- clause must not fire"; GetRemainingCount is only read when tasks exist, which
+-- also guards the zero-stations case from instantly ending every match.
+-- ============================================================================
+local function defaultCrewObjectiveProvider()
+	local total = TaskManager.GetTotalCount()
+	if total <= 0 then
+		return false
+	end
+	return TaskManager.GetRemainingCount() <= 0
+end
+
+MatchService.SetCrewObjectiveProvider(defaultCrewObjectiveProvider)
 
 TaskManager.OnTaskCompleted(function()
 	MatchService.EvaluateWinCondition("TaskCompleted")

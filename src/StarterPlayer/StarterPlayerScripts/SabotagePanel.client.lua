@@ -29,6 +29,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
+local GameConstants = require(ReplicatedStorage.Modules.GameConstants)
 local UIStyle = require(ReplicatedStorage.Modules.UIStyle)
 local ClientSettings = require(script.Parent:WaitForChild("ClientSettings"))
 local roleAssignedEvent = Remotes.Get(Remotes.Names.RoleAssigned)
@@ -40,7 +41,7 @@ local playerDiedEvent = Remotes.Get(Remotes.Names.PlayerDied)
 local localPlayer = Players.LocalPlayer
 local playerGui = localPlayer:WaitForChild("PlayerGui")
 
-local IMPOSTOR_ROLE = "Impostor"
+local IMPOSTOR_ROLE = GameConstants.Roles.Vessel
 
 -- Mirrors of SabotageService's tuning, for the countdown LABEL only.
 local SABOTAGE_COOLDOWN = 30

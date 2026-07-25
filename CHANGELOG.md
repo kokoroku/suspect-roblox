@@ -4,7 +4,7 @@ Maintained per-prompt as a durable development record; entries are appended chro
 
 ## Project overview
 
-Suspect is a Roblox social-deduction game (crewmates vs. impostors) built as a Rojo project. What exists in the code today:
+Suspect is a Roblox social-deduction game (crewmates vs. impostors) built as a Rojo project. The project has since pivoted to the "Séance/Banishment" design — a candlelit manor built on this same skeleton — with `docs/DESIGN.md` as the authoritative design contract that supersedes the old roadmap's gameplay plans. What exists in the code today:
 
 - **Round loop** - `MatchService` waits for a minimum player count, runs an intermission countdown, plays the match, shows an end screen, and loops. Late joiners spectate and spawn into the next round.
 - **Roles, kills, meetings** - `RoleManager` is the single source of truth for role and alive-state; `KillSystem` does proximity/cooldown-validated kills with ragdoll bodies; `MeetingSystem` runs body reports and emergency meetings, seats players at a table, tallies votes and ejects. Dead players get a spectate camera with target cycling.
@@ -134,6 +134,53 @@ Suspect is a Roblox social-deduction game (crewmates vs. impostors) built as a R
 - Fonts: audited every text instance - all labels, headers, buttons, notices and hints use `UIStyle` Montserrat faces with the standard stroke; the pixel `PressStart2P` font now appears in exactly one place, the key text inside keycap chips.
 - Keycap chips: each is a full square Frame (min 30x30, no `UICorner`, a complete four-sided 2px near-white `UIStroke`, dark fill), right-aligned with clearance from the scroll edge so the border is never clipped. Displayed key uses the same short-name mapping as the HUD badges (One-Nine -> "1".."9", Zero -> "0", single letters as-is, else `KeyCode.Name`), and the chip auto-widens up to ~64px for longer names instead of crushing the text. The fixed "Interact (world)" row keeps its dimmed styling with the same full-square chip.
 - Capture feedback: clicking a chip switches its stroke to Accent and pulses it (transparency tweened 0<->0.6 on a loop, token-guarded), replaces the key text with a keyboard glyph, and adds a "(press a key)" suffix to the row label. Success stops the pulse and flashes the chip Positive before showing the new key; Reserved/InUse flash Negative alongside the row notice and keep the old key; Escape cancels cleanly. Starting a capture on a second chip cancels the first.
+
+### 2026-07-25 - Design pivot: docs realigned to DESIGN.md
+
+- The project pivoted from the old three-map / generic-task / rarity+tier plan to the "Séance/Banishment" design. `docs/DESIGN.md` (added manually) is now the authoritative design contract; the doc changes below align the repo's documentation to it. No code changed.
+- Deleted the superseded `suspect-roblox-roadmap.md` at the repo root, which described the abandoned three-map scope, generic task reskins and the old powerup model.
+- Added `docs/ROADMAP.md`: a one-page phase view condensed from DESIGN.md §11 - a two-line status header (skeleton complete; pivoting to Séance/Banishment) then Phase 0 through Phase 6 with each phase's goal and playable milestone, plus a deferred list (venues 2+, cosmetics content, mobile pass, charge system, doom clock) per DESIGN.md §12.
+- Updated this file's Project overview to note the pivot and point to `docs/DESIGN.md`; History entries were left untouched.
+
+### 2026-07-25 - Phase 0 prep (1/5): role & winner ids centralized
+
+- New `ReplicatedStorage/Modules/GameConstants.lua` (no requires): `GameConstants.Roles` (`Crew = "Crewmate"`, `Vessel = "Impostor"`) and `GameConstants.Winners` (`Crew = "CrewWin"`, `Vessel = "ImpostorWin"`). Values are the exact existing literals, discovered from `RoleManager`/`MatchService` - byte-identical, nothing renamed. These are internal ids; the Séance re-theme changes display strings only, so the ids stay stable.
+- Swept every comparison/assignment of those literals to reference the module instead. Changed: `RoleManager` (role assignment, `GetAllImpostors`/`GetAllCrew`, `CheckWinCondition` returns), `KillSystem` (killer/target role checks), `SabotageService` (`IMPOSTOR_ROLE` init + the boiler `ForceEnd` winner), and the clients `SabotagePanel`, `PowerupFX`, `KillFX` (each `IMPOSTOR_ROLE` init) and `EndScreenUI` (winner branch). Each now requires `GameConstants`.
+- Checked and deliberately left alone: `MatchService` (relays the winner value from `RoleManager`, holds no literal of its own), `SpectateService`/`MeetingSystem` (role used via `GetRole` with no literal compare - MeetingSystem only passes `ejectedRole` through), `PowerupHUD` (displays the Seer role via `tostring`, no compare), `KillInput`, and all ten `TaskMinigames` (no role gating). The `"NotImpostor"`/`"CannotKillImpostor"` strings are error codes, not roles, and were untouched.
+- Behavior is unchanged: this moves where the strings live, never their values. No per-service tuning was pulled into the module - only genuinely shared ids.
+
+### 2026-07-25 - Phase 0 prep (2/5): crew objective behind a swappable provider
+
+- `MatchService` now owns the crew's victory objective behind a seam: new `MatchService.SetCrewObjectiveProvider(fn)` (fn() -> boolean, true when the objective is complete). The default provider, set at the bottom of the file, is the verbatim task-completion computation that used to live inline in `EvaluateWinCondition` - `GetTotalCount() > 0 and GetRemainingCount() <= 0`, with `GetRemainingCount` still only read when tasks exist.
+- `EvaluateWinCondition` no longer computes task progress itself: it calls `crewObjectiveProvider()` and passes the boolean onward. The `TaskCompleted` trigger, its parity exclusion (`includeParity = trigger ~= "TaskCompleted"`), and every other trigger are unchanged.
+- A loud PHASE 1 SEAM comment marks the default provider: Phase 1's `RitualService` swaps in brazier/Convergence completion and removes the `TaskCompleted` hook then; until that day tasks win matches exactly as before.
+- `RoleManager.CheckWinCondition`'s first parameter was renamed `tasksRemaining` -> `crewObjectiveComplete` and is now the boolean directly; the win clause became `elseif crewObjectiveComplete then` (was `tasksRemaining ~= nil and tasksRemaining <= 0`). Parity logic and every return value are unchanged, and the sole call site (MatchService) was updated.
+- Byte-identical: no tasks -> false, remaining 0 -> true, remaining > 0 -> false, matching the old nil/`<= 0` behavior exactly.
+
+### 2026-07-25 - Phase 0 prep (3/5): powerup data moved to shared CharmDefs
+
+- New `ReplicatedStorage/Modules/CharmDefs.lua` (no requires): every powerup keyed by its existing id, carrying the live fields moved verbatim from `PowerupService` - `displayName`, `rarity`, `gachaWeight` (was `weight`), `cooldown`, and the per-tier `tiers` tables exactly as they were (including Seer's per-tier `usesPerMatch`, which is 1/1/2 and so stays inside the tiers, not hoisted). Same ids, names, odds, cooldowns and tier stats - nothing revalued.
+- Added Phase 2 SCAFFOLD fields per docs/DESIGN.md sections 7 & 11, present but read by nothing yet: `loadoutWeight` (1/1/2/3/3), `essence` (Haste/Light/Veil/Mirage/Insight), `faces = { Crew, Vessel }`, `omen`. Header documents them as Phase 2 targets and names the module the single source of truth the Charm system interprets.
+- `PowerupService` deleted its inline `Definitions` literal and now aliases `PowerupService.Definitions = CharmDefs.Charms`, so it interprets the shared data. Effect handlers, the active-effect registry, identity tokens, cooldown/use gates and every hook are untouched. `GetOdds` reads `def.gachaWeight`. The public alias keeps `Bootstrap`'s `DebugGrantMax` (iterates the ids) working with no change to that file.
+- `GachaService` now requires `CharmDefs` and reads weights, rarity classes and catalog data from `CharmDefs.Charms` (`gachaWeight` for the weighted roll, `rarity` for pity, `displayName`/`rarity` for the catalog); pity logic is unchanged and the `GetCatalog` RemoteFunction returns the exact same shape clients depend on.
+- No changes to `PowerupOwnershipService`, `LoadoutService`, `Bootstrap`, or any client file - they key by the stable ids.
+
+### 2026-07-25 - Phase 0 prep (4/5): DataStore-backed player persistence
+
+- New `ServerScriptService/Services/PlayerDataService.lua`: owns a DataStore ("SuspectPlayerData_v1") session per player. Schema `{ version = 1, currency = 500, ownership = { [charmId] = { tier, dupes } }, pity = 0, memoria = 0 }` (memoria is a Phase 3 scaffold - stored, never read yet). Loads on join with pcall + up to 3 retries and linear backoff; saves on `PlayerRemoving`, autosaves dirty sessions every 120s, and `game:BindToClose` flushes everyone with a Studio-shutdown wait. Public API is `Get`/`MarkDirty`/`IsLoaded`, plus an `OnLoaded` hook owning services use to hydrate. Promoted ahead of the Forge per docs/DESIGN.md sections 8 & 11.
+- DATA-LOSS GUARD: when a load fails after every retry, the session is served DEFAULTS but marked UNSAVEABLE and warns loudly, so a failed load can never later overwrite real data in the store (autosave, leave-save and BindToClose all skip unsaveable sessions).
+- Currency migrated onto persisted data: the `Currency` player Attribute is now a MIRROR set from `data.currency` on load; every spend goes through a small PlayerDataService-backed setter in `GachaService` that updates `data.currency`, the Attribute, and marks dirty. `Bootstrap` no longer hardcodes 500 on join - it sets the Attribute from data in an `OnLoaded` handler. Existing UI reading the Attribute is untouched.
+- `PowerupOwnershipService` hydrates its in-memory `owned` cache from `data.ownership` on load (bridging persisted `dupes` <-> the cache's long-standing `duplicates`, so consumer signatures are unchanged) and writes each entry back + marks dirty on grant/dupe/upgrade. `DebugGrantMax` deliberately does not persist (session-only) and now runs post-load via `OnLoaded` so hydration can't clobber it. `Owns`/`GetOwned*`/`GrantOrDuplicate`/`TryUpgrade` signatures unchanged.
+- `GachaService` pity now reads/writes `data.pity` (marking dirty), replacing the in-memory `pityCounter`; the `GetCatalog` RemoteFunction shape is unchanged and tolerates a not-yet-loaded session (pity reads 0).
+- Join-order safety: `GachaService.Roll`, `LoadoutService.SetLoadout` and `PowerupOwnershipService.TryUpgrade` return a friendly `"StillLoading"` failure when called before `IsLoaded`, rather than acting on defaults; read-only catalog still populates during the load.
+- No cycles: PlayerDataService requires only engine services; nothing requires it back.
+
+### 2026-07-25 - Phase 0 prep (5/5): spirit + séance seams (skeleton only)
+
+- New `ServerScriptService/Services/SpiritService.lua`: a dead-player registry. Players are added on `RoleManager.OnAliveChanged(alive == false)` and cleared on `MatchService.OnMatchStart` and `PlayerRemoving`. API is `IsSpirit(player)` and `GetSpirits()` (returns a fresh array). Cycle-safe: it requires RoleManager/MatchService (neither requires it back) and reacts only through their hooks. A loud comment block maps docs/DESIGN.md section 6 onto this seam - the Offer (allegiance) at registry-add, plus allegiance kits, Memoria, ghost chores and veil-shock reception all hanging here in Phase 3. Today it only tracks membership.
+- `MeetingSystem` gained `RegisterSeancePhaseHook(cb)`; the registered callbacks are invoked once, right after the meeting is convened and announced (after `MeetingStarted` fires), marked with a loud PHASE 3 SEAM comment - the single point where the once-per-séance spirit question will run, noting it ships behind a flag (`DebugFlags.SPIRIT_QUESTION`). No hooks are registered today, so the loop is a no-op; zero change to meeting behavior or timing.
+- `Bootstrap` requires `SpiritService` alongside the other services (a side-effect require, like `SpectateService`, that activates its death tracking).
+- Skeleton only: no behavior changes, no new remotes, no UI.
 
 ## Conventions
 

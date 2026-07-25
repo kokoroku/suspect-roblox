@@ -30,6 +30,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
+local GameConstants = require(ReplicatedStorage.Modules.GameConstants)
 local TaskDefs = require(ReplicatedStorage.Modules.TaskDefs)
 local DebugFlags = require(ServerScriptService.Services.DebugFlags)
 local RoleManager = require(ServerScriptService.Services.RoleManager)
@@ -52,7 +53,7 @@ local FIX_RANGE = 12
 -- The role string that may sabotage. DebugFlags.ALL_IMPOSTORS needs no
 -- special-casing here: it makes everyone's ASSIGNED role Impostor, so every
 -- player passes this gate naturally through RoleManager.
-local IMPOSTOR_ROLE = "Impostor"
+local IMPOSTOR_ROLE = GameConstants.Roles.Vessel
 
 -- ============================================================
 -- Definitions. Station keys are the RESERVED fix taskIds (the FixId attribute a
@@ -243,7 +244,7 @@ local function startCriticalTimer()
 				broadcast() -- final tick: timeLeft reads 0
 				-- Non-count win condition, so it can't go through
 				-- EvaluateWinCondition - the alive/task counts didn't change.
-				MatchService.ForceEnd("ImpostorWin")
+				MatchService.ForceEnd(GameConstants.Winners.Vessel)
 				return
 			end
 

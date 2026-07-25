@@ -11,11 +11,12 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
+local GameConstants = require(ReplicatedStorage.Modules.GameConstants)
 local DebugFlags = require(ServerScriptService.Services.DebugFlags)
 
 local RoleManager = {}
 
--- player -> { role = "Crewmate" | "Impostor", alive = bool }
+-- player -> { role = GameConstants.Roles.Crew | GameConstants.Roles.Vessel, alive = bool }
 local playerState = {}
 
 local IMPOSTOR_RATIO = 1 / 6 -- ~1 impostor per 6 players, tune later
@@ -53,7 +54,7 @@ end
 function RoleManager.GetAllImpostors()
 	local impostors = {}
 	for player, state in pairs(playerState) do
-		if state.role == "Impostor" then
+		if state.role == GameConstants.Roles.Vessel then
 			table.insert(impostors, player)
 		end
 	end
@@ -63,7 +64,7 @@ end
 function RoleManager.GetAllCrew()
 	local crew = {}
 	for player, state in pairs(playerState) do
-		if state.role == "Crewmate" then
+		if state.role == GameConstants.Roles.Crew then
 			table.insert(crew, player)
 		end
 	end
@@ -85,7 +86,7 @@ function RoleManager.AssignRoles(playersInMatch)
 	end
 
 	for i, player in ipairs(shuffled) do
-		local role = (i <= impostorCount) and "Impostor" or "Crewmate"
+		local role = (i <= impostorCount) and GameConstants.Roles.Vessel or GameConstants.Roles.Crew
 		playerState[player] = { role = role, alive = true }
 
 		local roleEvent = Remotes.Get(Remotes.Names.RoleAssigned)
@@ -96,14 +97,17 @@ function RoleManager.AssignRoles(playersInMatch)
 	end
 end
 
--- Returns "CrewWin", "ImpostorWin", or nil if the match should continue.
+-- Returns GameConstants.Winners.Crew, GameConstants.Winners.Vessel, or nil if
+-- the match should continue.
+-- crewObjectiveComplete: boolean, true when the crew's victory objective is done
+-- (computed by MatchService's swappable crew-objective provider).
 -- includeParity: when false, the impostors >= crew parity win is skipped (used
 -- for task-completion checks, which can't change alive counts - see MatchService).
-function RoleManager.CheckWinCondition(tasksRemaining, includeParity)
+function RoleManager.CheckWinCondition(crewObjectiveComplete, includeParity)
 	local aliveImpostors, aliveCrew = 0, 0
 	for _, state in pairs(playerState) do
 		if state.alive then
-			if state.role == "Impostor" then
+			if state.role == GameConstants.Roles.Vessel then
 				aliveImpostors += 1
 			else
 				aliveCrew += 1
@@ -112,11 +116,11 @@ function RoleManager.CheckWinCondition(tasksRemaining, includeParity)
 	end
 
 	if aliveImpostors == 0 then
-		return "CrewWin"
+		return GameConstants.Winners.Crew
 	elseif includeParity and aliveImpostors >= aliveCrew then
-		return "ImpostorWin"
-	elseif tasksRemaining ~= nil and tasksRemaining <= 0 then
-		return "CrewWin"
+		return GameConstants.Winners.Vessel
+	elseif crewObjectiveComplete then
+		return GameConstants.Winners.Crew
 	end
 
 	return nil

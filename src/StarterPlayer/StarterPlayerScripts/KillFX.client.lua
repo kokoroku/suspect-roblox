@@ -24,6 +24,7 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
+local GameConstants = require(ReplicatedStorage.Modules.GameConstants)
 local UIStyle = require(ReplicatedStorage.Modules.UIStyle)
 local ClientSettings = require(script.Parent:WaitForChild("ClientSettings"))
 local killFeedbackEvent = Remotes.Get(Remotes.Names.KillFeedback)
@@ -34,7 +35,7 @@ local matchEndedEvent = Remotes.Get(Remotes.Names.MatchEnded)
 local localPlayer = Players.LocalPlayer
 local playerGui = localPlayer:WaitForChild("PlayerGui")
 
-local IMPOSTOR_ROLE = "Impostor"
+local IMPOSTOR_ROLE = GameConstants.Roles.Vessel
 -- PressStart2P + near-white border, matched to PromptUI's keycap look.
 local PIXEL_FONT = "rbxasset://fonts/families/PressStart2P.json"
 local PIXEL_FONTFACE = Font.new(PIXEL_FONT)

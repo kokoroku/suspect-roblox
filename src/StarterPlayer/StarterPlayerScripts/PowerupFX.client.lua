@@ -23,6 +23,7 @@ local Lighting = game:GetService("Lighting")
 local UserInputService = game:GetService("UserInputService")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
+local GameConstants = require(ReplicatedStorage.Modules.GameConstants)
 local roleAssignedEvent = Remotes.Get(Remotes.Names.RoleAssigned)
 local lightsChangedEvent = Remotes.Get(Remotes.Names.LightsChanged)
 local powerupEffectEvent = Remotes.Get(Remotes.Names.PowerupEffect)
@@ -48,7 +49,7 @@ local CANDLE_RANGE = 6
 local CANDLE_BRIGHTNESS = 0.9
 local CANDLE_COLOR = Color3.fromRGB(255, 200, 140)
 
-local IMPOSTOR_ROLE = "Impostor"
+local IMPOSTOR_ROLE = GameConstants.Roles.Vessel
 
 -- Snapshot the map's lit look ONCE, before anything here has modified it, so
 -- every restore puts back exactly what the map shipped with.

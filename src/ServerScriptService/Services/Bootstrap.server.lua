@@ -15,6 +15,7 @@ local Players = game:GetService("Players")
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
 Remotes.CreateAll()
 
+local PlayerDataService = require(script.Parent.PlayerDataService)
 local PowerupService = require(script.Parent.PowerupService)
 local PowerupOwnershipService = require(script.Parent.PowerupOwnershipService)
 local LoadoutService = require(script.Parent.LoadoutService)
@@ -24,6 +25,9 @@ local MeetingSystem = require(script.Parent.MeetingSystem)
 local MatchService = require(script.Parent.MatchService)
 local TaskManager = require(script.Parent.TaskManager)
 local SabotageService = require(script.Parent.SabotageService)
+-- Side-effect service: requiring it activates its spirit registry (death tracking).
+-- Nothing else requires it; it only reacts through RoleManager/MatchService hooks.
+local SpiritService = require(script.Parent.SpiritService)
 local DebugFlags = require(script.Parent.DebugFlags)
 -- Side-effect service: requiring it is what activates its dead-player broadcasts.
 local SpectateService = require(script.Parent.SpectateService)
@@ -202,18 +206,30 @@ Remotes.Get(Remotes.Names.DebugToggleLights).OnServerEvent:Connect(function(play
 end)
 
 -- ============================================================
--- Player join: set currency, then manually spawn ONLY if the round loop is in a
--- phase where a fresh character belongs. Joiners during "InProgress"/"Ended"
--- deliberately get NO character - they are spectators until the round loop
--- spawns them at the next intermission. CharacterAutoLoads is off, so no
--- character appears unless we make one here.
+-- Player data loaded: mirror currency onto the Attribute the UI reads, and apply
+-- the debug grant. This runs AFTER PlayerDataService resolves the load (and after
+-- PowerupOwnershipService has hydrated its cache, since that OnLoaded registers
+-- first), so the debug grant lands on top of - not under - the loaded ownership.
 -- ============================================================
-Players.PlayerAdded:Connect(function(player)
-	player:SetAttribute("Currency", 500)
+PlayerDataService.OnLoaded(function(player)
+	local data = PlayerDataService.Get(player)
+	if data then
+		player:SetAttribute("Currency", data.currency) -- UI mirror of persisted currency
+	end
 	if DebugFlags.GRANT_ALL_POWERUPS then
 		PowerupOwnershipService.DebugGrantMax(player, PowerupService.Definitions)
 	end
+end)
 
+-- ============================================================
+-- Player join: manually spawn ONLY if the round loop is in a phase where a fresh
+-- character belongs. Joiners during "InProgress"/"Ended" deliberately get NO
+-- character - they are spectators until the round loop spawns them at the next
+-- intermission. CharacterAutoLoads is off, so no character appears unless we make
+-- one here. (Currency/ownership are handled by the OnLoaded hook above, off the
+-- async data load - not here.)
+-- ============================================================
+Players.PlayerAdded:Connect(function(player)
 	local state = MatchService.GetState()
 	if state == "Waiting" or state == "Intermission" then
 		player:LoadCharacter()

@@ -14,6 +14,7 @@ local PhysicsService = game:GetService("PhysicsService")
 local Debris = game:GetService("Debris")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
+local GameConstants = require(ReplicatedStorage.Modules.GameConstants)
 local RoleManager = require(ServerScriptService.Services.RoleManager)
 local MatchService = require(ServerScriptService.Services.MatchService)
 local DebugFlags = require(ServerScriptService.Services.DebugFlags)
@@ -214,7 +215,7 @@ function KillSystem.AttemptKill(killer, target)
 		return false, "InvalidTarget"
 	end
 
-	if RoleManager.GetRole(killer) ~= "Impostor" then
+	if RoleManager.GetRole(killer) ~= GameConstants.Roles.Vessel then
 		return false, "NotImpostor"
 	end
 
@@ -226,7 +227,7 @@ function KillSystem.AttemptKill(killer, target)
 		return false, "TargetAlreadyDead"
 	end
 
-	if RoleManager.GetRole(target) == "Impostor" and not DebugFlags.ALL_IMPOSTORS then
+	if RoleManager.GetRole(target) == GameConstants.Roles.Vessel and not DebugFlags.ALL_IMPOSTORS then
 		return false, "CannotKillImpostor"
 	end
 

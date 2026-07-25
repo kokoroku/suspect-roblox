@@ -11,6 +11,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerScriptService = game:GetService("ServerScriptService")
 
 local PowerupOwnershipService = require(ServerScriptService.Services.PowerupOwnershipService)
+local PlayerDataService = require(ServerScriptService.Services.PlayerDataService)
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
 -- Cycle-safe: MatchService requires RoleManager/TaskManager/Remotes/DebugFlags
 -- and RoleManager requires only Remotes - neither ever requires LoadoutService.
@@ -29,6 +30,13 @@ local activeLoadouts = {}
 
 -- Returns true/false, and an error reason on failure.
 function LoadoutService.SetLoadout(player, powerupIds)
+	-- Join-order safety: ownership is validated below against a cache that is
+	-- empty until the player's data loads, so a save that raced the load would
+	-- wrongly report NotOwned. Fail with a clear reason instead.
+	if not PlayerDataService.IsLoaded(player) then
+		return false, "StillLoading"
+	end
+
 	-- Editing is safe at ANY time by construction: activeLoadouts is written
 	-- exclusively at MatchService.OnMatchStart from pending, so an alive player's
 	-- mid-match save affects only their next match, and a countdown-phase save

@@ -15,6 +15,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
+local GameConstants = require(ReplicatedStorage.Modules.GameConstants)
 local UIStyle = require(ReplicatedStorage.Modules.UIStyle)
 local matchEndedEvent = Remotes.Get(Remotes.Names.MatchEnded)
 
@@ -60,10 +61,10 @@ subLabel.TextXAlignment = Enum.TextXAlignment.Center
 local showToken = 0
 
 matchEndedEvent.OnClientEvent:Connect(function(winner, duration)
-	if winner == "CrewWin" then
+	if winner == GameConstants.Winners.Crew then
 		title.Text = "CREW WINS!"
 		title.TextColor3 = UIStyle.Colors.Positive
-	elseif winner == "ImpostorWin" then
+	elseif winner == GameConstants.Winners.Vessel then
 		title.Text = "IMPOSTORS WIN!"
 		title.TextColor3 = UIStyle.Colors.Negative
 	else

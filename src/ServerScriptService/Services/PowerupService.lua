@@ -17,6 +17,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
+local CharmDefs = require(ReplicatedStorage.Modules.CharmDefs)
 local PowerupOwnershipService = require(ServerScriptService.Services.PowerupOwnershipService)
 local LoadoutService = require(ServerScriptService.Services.LoadoutService)
 -- Cycle-safe: MeetingSystem requires only RoleManager/TaskManager/Remotes and
@@ -36,71 +37,14 @@ local PowerupService = {}
 
 -- ============================================================
 -- Powerup + variant definitions
--- Add new powerups by adding a new top-level entry here.
 -- ============================================================
--- New shape per entry: displayName, rarity, weight (gacha roll weight),
--- cooldown (seconds), tiers = array [1..3] of stat tables.
-PowerupService.Definitions = {
-	SpeedBoost = {
-		displayName = "Speed Boost",
-		rarity = "Common",
-		weight = 30,
-		cooldown = 20,
-		tiers = {
-			{ speedMultiplier = 1.15, duration = 5 },
-			{ speedMultiplier = 1.25, duration = 7 },
-			{ speedMultiplier = 1.35, duration = 10 },
-		},
-	},
-	Flashlight = {
-		displayName = "Flashlight",
-		rarity = "Common",
-		weight = 30,
-		cooldown = 30,
-		-- fogEnd: how far the BEARER sees in the dark (client fog, applied by
-		-- PowerupFX). glowRange: the head light EVERYONE sees them by.
-		-- Tier 3's fogEnd equals the impostor's dark vision - full parity with an
-		-- impostor's sight, bought with a loadout slot and with being visible.
-		tiers = {
-			{ fogEnd = 45, glowRange = 16 },
-			{ fogEnd = 65, glowRange = 22 },
-			{ fogEnd = 90, glowRange = 30 },
-		},
-	},
-	Invisibility = {
-		displayName = "Invisibility",
-		rarity = "Rare",
-		weight = 20,
-		cooldown = 40,
-		tiers = {
-			{ duration = 6 },
-			{ duration = 9 },
-			{ duration = 12 },
-		},
-	},
-	Shapeshifter = {
-		displayName = "Shapeshifter",
-		rarity = "Epic",
-		weight = 10,
-		cooldown = 60,
-		tiers = {
-			{ duration = 15 },
-			{ duration = 20 },
-			{ duration = 25 },
-		},
-	},
-	Seer = {
-		displayName = "Seer",
-		rarity = "Epic",
-		weight = 10,
-		cooldown = 30,
-		tiers = {
-			{ minAlive = 5, usesPerMatch = 1 },
-			{ minAlive = 4, usesPerMatch = 1 },
-			{ minAlive = 4, usesPerMatch = 2 },
-		},
-	},
-}
+-- Definitions now live in the shared CharmDefs module (the single source of
+-- truth the Charm system interprets); this service is an interpreter of them.
+-- The public alias is kept so existing readers (GachaService, Bootstrap's
+-- DebugGrantMax) are unaffected. Per-entry shape: displayName, rarity,
+-- gachaWeight (gacha roll weight), cooldown (seconds), tiers = array [1..3] of
+-- stat tables (plus Phase 2 scaffold fields that nothing here reads).
+PowerupService.Definitions = CharmDefs.Charms
 
 local RARITY_RANK = { Common = 1, Rare = 2, Epic = 3 }
 
@@ -186,7 +130,7 @@ end
 function PowerupService.GetOdds()
 	local totalWeight = 0
 	for _, def in pairs(PowerupService.Definitions) do
-		totalWeight += def.weight
+		totalWeight += def.gachaWeight
 	end
 
 	local odds = {}
@@ -195,7 +139,7 @@ function PowerupService.GetOdds()
 			powerupId = id,
 			displayName = def.displayName,
 			rarity = def.rarity,
-			percent = math.floor((def.weight / totalWeight) * 1000 + 0.5) / 10, -- one decimal
+			percent = math.floor((def.gachaWeight / totalWeight) * 1000 + 0.5) / 10, -- one decimal
 		})
 	end
 

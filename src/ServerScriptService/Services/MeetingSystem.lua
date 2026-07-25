@@ -41,6 +41,15 @@ function MeetingSystem.OnMeetingStart(callback)
 	table.insert(meetingStartCallbacks, callback)
 end
 
+-- Callbacks fired at the séance phase of a meeting (see the PHASE 3 SEAM in
+-- StartMeeting). None are registered today, so this is a no-op - registered in
+-- Phase 3 by the spirit-question system. Same one-directional hook pattern.
+local seancePhaseCallbacks = {}
+
+function MeetingSystem.RegisterSeancePhaseHook(callback)
+	table.insert(seancePhaseCallbacks, callback)
+end
+
 function MeetingSystem.IsMeetingActive()
 	return meetingActive
 end
@@ -144,6 +153,20 @@ function MeetingSystem.StartMeeting(caller, reason, targetName)
 	seatPlayersAtTable(alivePlayersList)
 
 	Remotes.Get(Remotes.Names.MeetingStarted):FireAllClients(reason, targetName, alivePlayerNames, MEETING_DURATION)
+
+	-- ========================================================================
+	-- PHASE 3 SEAM - THE SPIRIT QUESTION (docs/DESIGN.md section 6)
+	-- The séance is now convened: this is the single point where the once-per-
+	-- séance spirit question runs - the living pose one yes/no question and the
+	-- dead answer by an anonymous candle-flicker majority (Faithful truthful,
+	-- Hollowed may lie). Per DESIGN.md it SHIPS BEHIND A FLAG (the spirit-question
+	-- flag, e.g. DebugFlags.SPIRIT_QUESTION) and is cut without ceremony if it
+	-- degenerates. Today NO hooks are registered, so this loop is a no-op and
+	-- changes zero meeting behavior or timing.
+	-- ========================================================================
+	for _, callback in ipairs(seancePhaseCallbacks) do
+		callback(reason, targetName, alivePlayersList)
+	end
 
 	task.delay(MEETING_DURATION, function()
 		MeetingSystem.ResolveMeeting()
