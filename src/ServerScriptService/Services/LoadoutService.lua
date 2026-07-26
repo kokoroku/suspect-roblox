@@ -13,6 +13,8 @@ local ServerScriptService = game:GetService("ServerScriptService")
 local PowerupOwnershipService = require(ServerScriptService.Services.PowerupOwnershipService)
 local PlayerDataService = require(ServerScriptService.Services.PlayerDataService)
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
+-- Cycle-safe: CharmDefs is pure data with no requires of its own.
+local CharmDefs = require(ReplicatedStorage.Modules.CharmDefs)
 -- Cycle-safe: MatchService requires RoleManager/TaskManager/Remotes/DebugFlags
 -- and RoleManager requires only Remotes - neither ever requires LoadoutService.
 local MatchService = require(ServerScriptService.Services.MatchService)
@@ -54,6 +56,12 @@ function LoadoutService.SetLoadout(player, powerupIds)
 			return false, "DuplicateEntry"
 		end
 		seen[powerupId] = true
+		-- Checked BEFORE ownership so a player who owns a retired Charm is told the
+		-- truth ("Retired") rather than the misleading "NotOwned".
+		local def = CharmDefs.Charms[powerupId]
+		if def and def.enabled == false then
+			return false, "Retired"
+		end
 		if not PowerupOwnershipService.Owns(player, powerupId) then
 			return false, "NotOwned:" .. tostring(powerupId)
 		end
@@ -84,7 +92,19 @@ end
 -- mid-match never touches the active set.
 MatchService.OnMatchStart(function()
 	for _, player in ipairs(Players:GetPlayers()) do
-		activeLoadouts[player] = table.clone(pendingLoadouts[player] or {})
+		-- A Charm retired since the player last saved is dropped HERE, at the
+		-- promotion, and nowhere else. No mid-match surgery, and no rewriting
+		-- anyone's saved data: their pending set and the ownership behind it are
+		-- untouched, so the Charm simply stops arriving. Un-retiring it later needs
+		-- no migration - the next promotion just lets it through again.
+		local promoted = {}
+		for _, powerupId in ipairs(pendingLoadouts[player] or {}) do
+			local def = CharmDefs.Charms[powerupId]
+			if not def or def.enabled ~= false then
+				table.insert(promoted, powerupId)
+			end
+		end
+		activeLoadouts[player] = promoted
 		Remotes.Get(Remotes.Names.LoadoutApplied):FireClient(player, activeLoadouts[player])
 	end
 end)

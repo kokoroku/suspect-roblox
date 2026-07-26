@@ -12,13 +12,15 @@
 
 	IMPORTANT (cycle-safety): NOTHING requires SabotageService except Bootstrap
 	and the handler scripts (SabotageStationHandler, EmergencyButtonHandler,
-	BodyReportHandler). This module requires MatchService, MeetingSystem and
-	LightsSystem, so any of those requiring it back would create a cycle. The
-	reverse channels are the hooks registered at the bottom of this file
-	(OnMeetingStart / OnMatchStart) plus RegisterOnSabotageChanged, which the
-	station handler uses instead of being reached into from here.
+	BodyReportHandler). This module requires MatchService, MeetingSystem,
+	LightsSystem and RitualService, so any of those requiring it back would create
+	a cycle. The reverse channels are the hooks registered at the bottom of this
+	file (OnMeetingStart / OnMatchStart / RitualService.OnRageChanged) plus
+	RegisterOnSabotageChanged, which the station handler uses instead of being
+	reached into from here. RitualService deliberately does NOT require this module
+	- the Rage multiplier arrives through its OnRageChanged hook.
 
-	SCOPE (accepted, not a gap): two sabotages exist because the FRAMEWORK is the
+	SCOPE (accepted, not a gap): three sabotages exist because the FRAMEWORK is the
 	deliverable - doors/comms arrive as per-map data later. Triggering is
 	map-wide by design (no console to walk to yet), lights-out persists until
 	fixed with no failsafe timer, and an impostor fixing their own sabotage is
@@ -37,6 +39,7 @@ local RoleManager = require(ServerScriptService.Services.RoleManager)
 local MatchService = require(ServerScriptService.Services.MatchService)
 local MeetingSystem = require(ServerScriptService.Services.MeetingSystem)
 local LightsSystem = require(ServerScriptService.Services.LightsSystem)
+local RitualService = require(ServerScriptService.Services.RitualService)
 
 local SabotageService = {}
 
@@ -46,6 +49,10 @@ local SabotageService = {}
 local SABOTAGE_COOLDOWN = 30 -- seconds after a sabotage resolves before the next
 local MATCH_START_DELAY = 20 -- opening grace period; no sabotage this early
 local BOILER_TIME = 45 -- seconds the crew has to fix the boiler before losing
+-- Desecrate runs on its OWN cooldown, independent of the shared one, so it may
+-- fire even while Lights or Manifestation is running: it is a jab, not a phase
+-- (docs/DESIGN.md sections 5 & 9).
+local DESECRATE_COOLDOWN = 45
 -- How close (studs) a player's HumanoidRootPart must be to the fix station to
 -- finish - same anti-teleport / anti-remote-spoof floor as TaskManager's.
 local FIX_RANGE = 12
@@ -59,6 +66,11 @@ local IMPOSTOR_ROLE = GameConstants.Roles.Vessel
 -- Definitions. Station keys are the RESERVED fix taskIds (the FixId attribute a
 -- tagged part carries); values are the TaskDefs type whose minigame the fix
 -- opens. A sabotage resolves when EVERY station in its table is fixed.
+--
+-- INSTANT sabotages (instant = true) are a different shape entirely: they resolve
+-- the moment they fire, so they never set `active`, never open a fix window and
+-- have no stations. The cost to the crew is re-earning what was taken, plus
+-- everyone knowing the Entity acted.
 -- ============================================================
 local Sabotages = {
 	Lights = {
@@ -74,6 +86,11 @@ local Sabotages = {
 			["Sabotage:Boiler1"] = "FixValve",
 			["Sabotage:Boiler2"] = "FixValve",
 		},
+	},
+	Desecrate = {
+		instant = true,
+		critical = false,
+		stations = {},
 	},
 }
 
@@ -91,6 +108,12 @@ end
 -- nil, or { type = string, endsAt = number|nil (critical only), stationsFixed = { [taskId] = true } }
 local active = nil
 local cooldownReadyAt = 0
+-- Desecrate's own ready time, deliberately separate from cooldownReadyAt.
+local desecrateReadyAt = 0
+-- The Entity's Rage multiplier, pushed by RitualService as braziers light. Scales
+-- both cooldowns above, applied when a ready time is SET - a cooldown already
+-- ticking is never retroactively shortened.
+local cooldownMultiplier = 1
 -- player -> { taskId = string, startClock = number }. One live fix session per
 -- player; starting a new one silently replaces any previous (mirrors TaskManager).
 local fixSessions = {}
@@ -192,6 +215,13 @@ function SabotageService.IsCriticalActive()
 	return active ~= nil and Sabotages[active.type].critical == true
 end
 
+-- The Entity's Rage: scales BOTH the shared sabotage cooldown and Desecrate's own.
+-- RitualService pushes this through its OnRageChanged hook (registered at the
+-- bottom of this file); 1 is neutral.
+function SabotageService.SetCooldownMultiplier(mult)
+	cooldownMultiplier = mult
+end
+
 -- ============================================================
 -- Clear / resolve
 -- ============================================================
@@ -219,7 +249,7 @@ end
 -- reason: "Fixed" | "MeetingStarted" | ...
 function SabotageService.Resolve(reason)
 	clearActive(reason)
-	cooldownReadyAt = os.clock() + SABOTAGE_COOLDOWN
+	cooldownReadyAt = os.clock() + SABOTAGE_COOLDOWN * cooldownMultiplier
 end
 
 -- ============================================================
@@ -253,6 +283,36 @@ local function startCriticalTimer()
 	end)
 end
 
+-- Instant sabotages: fire and resolve in the same call. No `active`, no fix
+-- window, no shared cooldown - each owns its own ready time so it can be thrown
+-- mid-Lights or mid-Manifestation.
+local function triggerInstant(player, sabotageType)
+	if sabotageType ~= "Desecrate" then
+		return false, "UnknownSabotage"
+	end
+
+	if os.clock() < desecrateReadyAt then
+		return false, "Cooldown"
+	end
+
+	-- Nothing lit means nothing to take: reject WITHOUT consuming the cooldown, so
+	-- a wasted press never costs the Vessel 45 seconds.
+	if not RitualService.Extinguish() then
+		return false, "NothingToDesecrate"
+	end
+
+	desecrateReadyAt = os.clock() + DESECRATE_COOLDOWN * cooldownMultiplier
+
+	print("[SabotageService]", player.Name, "desecrated the most recently lit brazier")
+	-- The global "the Entity stirs" omen. Deliberately NOT the standard
+	-- statusPayload: nothing is active, so there is no state for a banner to hold -
+	-- this is a one-shot announcement. Station prompts are untouched (no stations),
+	-- so fireChanged has nothing to drive here either.
+	Remotes.Get(Remotes.Names.SabotageStatus):FireAllClients({ type = "Desecrate", instant = true })
+
+	return true
+end
+
 -- Returns true, or (false, reason). Sabotage can be called from anywhere on the
 -- map by design - there is no console to walk to yet.
 function SabotageService.Trigger(player, sabotageType)
@@ -272,6 +332,13 @@ function SabotageService.Trigger(player, sabotageType)
 	if RoleManager.GetRole(player) ~= IMPOSTOR_ROLE then
 		return false, "NotImpostor"
 	end
+
+	-- Everything above is shared; everything below is the ACTIVE-sabotage path.
+	-- Instant types skip the already-active and shared-cooldown gates entirely.
+	if def.instant then
+		return triggerInstant(player, sabotageType)
+	end
+
 	if active ~= nil then
 		return false, "AlreadyActive"
 	end
@@ -393,11 +460,20 @@ MeetingSystem.OnMeetingStart(function()
 	end
 end)
 
+-- The Entity's Rage reaches this module through RitualService's hook rather than
+-- a require back into here - see the cycle-safety note at the top.
+RitualService.OnRageChanged(function(_step, mult)
+	SabotageService.SetCooldownMultiplier(mult)
+end)
+
 -- Full reset for a new round. Deliberately does NOT arm the normal post-fix
--- cooldown - the opening grace period replaces it.
+-- cooldown - the opening grace period replaces it, and it applies to Desecrate
+-- too (the Vessel does not open the match by snuffing a brazier).
 MatchService.OnMatchStart(function()
 	clearActive("MatchStart")
+	cooldownMultiplier = 1 -- Rage back to neutral; RitualService re-pushes as braziers light
 	cooldownReadyAt = os.clock() + MATCH_START_DELAY
+	desecrateReadyAt = os.clock() + MATCH_START_DELAY
 end)
 
 Players.PlayerRemoving:Connect(function(player)

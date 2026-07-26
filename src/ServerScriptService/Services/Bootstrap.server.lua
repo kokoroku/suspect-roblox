@@ -24,6 +24,7 @@ local KillSystem = require(script.Parent.KillSystem)
 local MeetingSystem = require(script.Parent.MeetingSystem)
 local MatchService = require(script.Parent.MatchService)
 local TaskManager = require(script.Parent.TaskManager)
+local RitualService = require(script.Parent.RitualService)
 local SabotageService = require(script.Parent.SabotageService)
 -- Side-effect service: requiring it activates its spirit registry (death tracking).
 -- Nothing else requires it; it only reacts through RoleManager/MatchService hooks.
@@ -34,6 +35,15 @@ local SpectateService = require(script.Parent.SpectateService)
 -- Side-effect service (self-wires its match-start reset); also used by the
 -- DebugToggleLights handler below.
 local LightsSystem = require(script.Parent.LightsSystem)
+
+-- ============================================================
+-- The crew's victory objective (docs/DESIGN.md section 3): the Convergence
+-- channel completing, NOT task completion. Injected here rather than required
+-- inside MatchService because RitualService requires MatchService - wiring it the
+-- other way would close a require cycle. This is exactly what the composition
+-- root is for, and SetCrewObjectiveProvider is public for this reason.
+-- ============================================================
+MatchService.SetCrewObjectiveProvider(RitualService.IsComplete)
 
 if DebugFlags.ALL_IMPOSTORS then
 	warn("[Suspect] DEBUG MODE: ALL_IMPOSTORS is ON (DebugFlags.lua) - everyone will be an impostor. Do not ship.")

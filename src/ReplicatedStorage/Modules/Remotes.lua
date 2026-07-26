@@ -46,6 +46,10 @@ Remotes.Names = {
 	SeerResult = "SeerResult",
 	LightsChanged = "LightsChanged",
 	SabotageStatus = "SabotageStatus",
+	-- RitualStatus payload (RitualService is the only sender):
+	--   { lit, total, threshold, armed, channelProgress (0..1), channelRequired,
+	--     channelersPresent, complete }
+	RitualStatus = "RitualStatus",
 	-- DebugToggleLights, PowerupEffect, SeerResult and LightsChanged are wired
 	-- by the effects/lights work that follows this change - declared now so this
 	-- file is only touched once.

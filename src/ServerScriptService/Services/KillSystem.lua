@@ -31,6 +31,15 @@ local KILL_SOUND_ID = "rbxasset://sounds/snap.mp3" -- engine-bundled; the one st
 -- player -> cooldownUntil (os.clock())
 local killCooldowns = {}
 
+-- The Entity's Rage eases the Vessel's cooldowns as braziers light (docs/DESIGN.md
+-- section 5). RitualService pushes the multiplier here; 1 is neutral. Only FUTURE
+-- cooldowns scale - a cooldown already ticking is never retroactively shortened.
+local cooldownMultiplier = 1
+
+function KillSystem.SetCooldownMultiplier(mult)
+	cooldownMultiplier = mult
+end
+
 -- Callbacks fired after a kill is fully performed. Same one-directional hook
 -- pattern as MeetingSystem.OnMeetingStart - lets services react to a kill (e.g.
 -- PowerupService revealing the killer) without KillSystem requiring them.
@@ -239,13 +248,15 @@ function KillSystem.AttemptKill(killer, target)
 		return false, "TooFar"
 	end
 
+	local cooldown = KILL_COOLDOWN_SECONDS * cooldownMultiplier
+
 	RoleManager.SetAlive(target, false)
 	turnIntoBody(target)
-	killCooldowns[killer] = os.clock() + KILL_COOLDOWN_SECONDS
+	killCooldowns[killer] = os.clock() + cooldown
 
 	-- Killer-side client feedback (vignette / FOV punch / cooldown chip). The chip
 	-- counts down the same cooldown the system just applied.
-	Remotes.Get(Remotes.Names.KillFeedback):FireClient(killer, { cooldown = KILL_COOLDOWN_SECONDS })
+	Remotes.Get(Remotes.Names.KillFeedback):FireClient(killer, { cooldown = cooldown })
 
 	-- World feedback at the body: a nearby-audible snap and a floor blood pool.
 	local corpse = target.Character
@@ -269,6 +280,7 @@ end)
 
 MatchService.OnMatchStart(function()
 	killCooldowns = {}
+	cooldownMultiplier = 1 -- Rage back to neutral; RitualService re-pushes as braziers light
 end)
 
 return KillSystem

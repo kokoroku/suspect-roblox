@@ -69,11 +69,13 @@ function GachaService.Roll(player)
 	local forcePity = data.pity >= PITY_THRESHOLD
 
 	-- Build the candidate pool from all powerups, excluding Commons once pity
-	-- kicks in so the result is guaranteed Rare-or-better.
+	-- kicks in so the result is guaranteed Rare-or-better. Retired Charms
+	-- (enabled == false) are excluded outright - the remaining weights renormalize
+	-- naturally against the smaller total, so no weight has to be revalued.
 	local pool = {}
 	local totalWeight = 0
 	for id, def in pairs(CharmDefs.Charms) do
-		if not (forcePity and def.rarity == "Common") then
+		if def.enabled ~= false and not (forcePity and def.rarity == "Common") then
 			table.insert(pool, id)
 			totalWeight += def.gachaWeight
 		end
@@ -119,6 +121,10 @@ function GachaService.GetCatalog(player)
 			id = id,
 			displayName = def.displayName,
 			rarity = def.rarity,
+			-- Retired Charms STAY in the catalog - a player's tier and banked
+			-- duplicates must remain visible - but carry the flag so the client can
+			-- render them dimmed. Their percent is nil: GetOdds leaves them out.
+			enabled = def.enabled ~= false,
 			percent = percentById[id],
 			tier = entry and entry.tier or nil,
 			duplicates = entry and entry.duplicates or 0,

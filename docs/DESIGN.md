@@ -148,7 +148,7 @@ Once per séance, the living may pose one yes/no question. Spirits answer by can
 | Charm (id) | Rarity / Weight | Crew face | Vessel face | Omen |
 |---|---|---|---|---|
 | **Quickening** (SpeedBoost) | Common / 1 | Burst of speed to flee or deliver | Shorter burst that lunges toward the nearest player | A rushing draft; dust kicks visibly |
-| **Wick** (Flashlight) | Common / 1 | Lantern glow + extended sight during Snuffing | Bend light: fake a lamp-flicker elsewhere as misdirection | Your own light stutters |
+| **Wick** (Flashlight) **(RETIRED — rework pending; see section 12)** | Common / 1 | Lantern glow + extended sight during Snuffing | Bend light: fake a lamp-flicker elsewhere as misdirection | Your own light stutters |
 | **Shroud** (Invisibility) | Rare / 2 | Veil-step: the Vessel's veil-sight loses you briefly | Classic stalking invisibility; a kill breaks it (existing rule) | A cold-breath shimmer trail |
 | **Guise** (Shapeshifter) | Epic / 3 | Project an afterimage of yourself elsewhere — an alibi-maker | Copy a nearby player's appearance + display name (existing rules: real identity never falsified server-side) | A mirror-crack chime near the user |
 | **Augur** (Seer) | Epic / 3 | Read a nearby soul: true role, limited uses/match (existing) | Mark prey: see the target through walls briefly | A whisper audible to nearby players |
@@ -257,3 +257,5 @@ Each phase ends playtestable; nothing ships to the next phase unverified.
 
 ## 12. Out of scope for v1
 Additional venues · cosmetics store content · mobile input pass (standing debt) · additional Charms beyond the five + their Bindings · the charge system (parked) · doom-clock revisit · Entity as a visible character · trading (never pre-launch, per standing rule).
+
+- **Wick/Flashlight rework** — the original is retired from play; redesign owed before or at the identity pass. Ownership data is preserved.

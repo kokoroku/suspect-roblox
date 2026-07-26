@@ -124,17 +124,27 @@ local function findNearestOtherAlive(player, range)
 	return nearest
 end
 
--- Returns the whole gacha odds table (one entry per powerup): the chance of
--- rolling each powerup, sorted by rarity rank then descending percent.
+-- Returns the whole gacha odds table (one entry per ROLLABLE powerup): the
+-- chance of rolling each powerup, sorted by rarity rank then descending percent.
 -- { {powerupId, displayName, rarity, percent}, ... }
+--
+-- Retired Charms (enabled == false) are left out of BOTH the total and the list,
+-- exactly as GachaService leaves them out of the roll pool. That is not a
+-- cosmetic choice: this function exists so displayed odds and the actual roll can
+-- never drift apart, and counting a Charm that cannot be rolled would break it.
 function PowerupService.GetOdds()
 	local totalWeight = 0
 	for _, def in pairs(PowerupService.Definitions) do
-		totalWeight += def.gachaWeight
+		if def.enabled ~= false then
+			totalWeight += def.gachaWeight
+		end
 	end
 
 	local odds = {}
 	for id, def in pairs(PowerupService.Definitions) do
+		if def.enabled == false then
+			continue
+		end
 		table.insert(odds, {
 			powerupId = id,
 			displayName = def.displayName,
@@ -309,6 +319,13 @@ local effectHandlers = {
 		return true
 	end,
 
+	-- ============================================================
+	-- DORMANT - DEAD CODE, kept deliberately. Flashlight is RETIRED PENDING REWORK
+	-- (see CharmDefs), so TryUse rejects it with "Retired" before ever reaching
+	-- this handler. Nothing below runs today. It stays in place as the reference
+	-- implementation the Wick redesign (docs/DESIGN.md section 7) starts from -
+	-- delete it only once Wick replaces it.
+	-- ============================================================
 	Flashlight = function(player, stats)
 		if not LightsSystem.IsLightsOut() then
 			return false, "LightsAreOn"
@@ -357,6 +374,14 @@ function PowerupService.TryUse(player, powerupId)
 
 	if MeetingSystem.IsMeetingActive() then
 		return false, "MeetingActive"
+	end
+
+	-- A retired Charm never resolves, even if one somehow reached a slot.
+	-- LoadoutService already refuses to equip and drops it when promoting a saved
+	-- loadout, so this is the backstop, not the gate.
+	local retiredCheck = PowerupService.Definitions[powerupId]
+	if retiredCheck and retiredCheck.enabled == false then
+		return false, "Retired"
 	end
 
 	if not LoadoutService.HasEquipped(player, powerupId) then
@@ -443,6 +468,8 @@ end)
 
 -- When the lights come back on, every active Flashlight switches off (it has no
 -- duration of its own - it lives exactly as long as the darkness).
+-- DORMANT with the handler above: no Flashlight can be active while it is
+-- retired, so this loop finds nothing. Kept for the same reason.
 LightsSystem.OnLightsChanged(function(state)
 	if state == false then
 		for _, player in ipairs(Players:GetPlayers()) do

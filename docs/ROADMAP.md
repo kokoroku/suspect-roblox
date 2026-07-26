@@ -46,3 +46,4 @@ Each phase ends playtestable; nothing ships to the next phase unverified.
 - Mobile input pass.
 - The charge-from-play system (parked).
 - The doom clock (rejected; revisit only if ever needed).
+- The **Wick/Flashlight rework** — the original Charm is retired from play (`enabled = false` in `CharmDefs`); the redesign is owed before or at the identity pass. Ownership data for it is preserved and must never be deleted.

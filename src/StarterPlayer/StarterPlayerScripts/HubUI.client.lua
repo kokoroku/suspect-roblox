@@ -83,6 +83,12 @@ local RARITY_COLOR = {
 	Epic = UIStyle.Colors.RarityEpic,
 }
 
+-- Charms the server reports as enabled == false are RETIRED PENDING REWORK (see
+-- CharmDefs). They stay listed everywhere - a player's tier and banked duplicates
+-- are preserved and must remain visible - but render dimmed, carry this tag, are
+-- not selectable in the loadout picker, and offer no Upgrade button.
+local RETIRED_TAG = "Being reworked"
+
 -- ============================================================
 -- Window chrome, built once.
 -- ============================================================
@@ -220,16 +226,44 @@ local function renderLoadoutRows()
 	end
 
 	for i, entry in ipairs(ownedList) do
+		local retired = entry.enabled == false
 		local row = UIStyle.MakeButton(loadoutRefs.rows, "  " .. entry.displayName .. "   Tier " .. tostring(entry.tier))
 		row.Size = UDim2.new(1, -6, 0, 30)
 		row.LayoutOrder = i
 		row.TextXAlignment = Enum.TextXAlignment.Left
 		row.TextColor3 = RARITY_COLOR[entry.rarity] or UIStyle.Colors.TextPrimary
-		-- Selection goes through the style layer so hovering a selected row turns
-		-- it translucent instead of wiping the green.
-		UIStyle.SetButtonSelected(row, isSelected(entry.id), UIStyle.Colors.Selected)
+
+		if retired then
+			-- A Charm retired since this client last saved must not stay stuck in the
+			-- selection: the row is inert, so it could never be clicked back off, and
+			-- leaving it in would make every Save fail with "Retired" forever.
+			local selectedAt = table.find(selected, entry.id)
+			if selectedAt then
+				table.remove(selected, selectedAt)
+			end
+
+			-- Still LISTED, because the player still owns it and its tier still
+			-- stands - just visibly not equippable.
+			row.TextColor3 = UIStyle.Colors.TextDim
+			row.BackgroundTransparency = 0.35
+
+			local tag = UIStyle.MakeLabel(row, RETIRED_TAG, true)
+			tag.AnchorPoint = Vector2.new(1, 0.5)
+			tag.Position = UDim2.new(1, -UIStyle.Pad, 0.5, 0)
+			tag.Size = UDim2.fromOffset(110, 16)
+			tag.TextSize = 11
+			tag.TextXAlignment = Enum.TextXAlignment.Right
+		else
+			-- Selection goes through the style layer so hovering a selected row turns
+			-- it translucent instead of wiping the green.
+			UIStyle.SetButtonSelected(row, isSelected(entry.id), UIStyle.Colors.Selected)
+		end
 
 		row.MouseButton1Click:Connect(function()
+			if retired then
+				loadoutSetStatus(entry.displayName .. " is being reworked - not equippable")
+				return
+			end
 			if isSelected(entry.id) then
 				table.remove(selected, table.find(selected, entry.id))
 			elseif #selected < MAX_SLOTS then
@@ -253,7 +287,13 @@ local function refreshOwned()
 	ownedById = {}
 	for _, entry in ipairs(catalog.powerups) do
 		if entry.tier then -- owned only
-			table.insert(ownedList, { id = entry.id, displayName = entry.displayName, tier = entry.tier, rarity = entry.rarity })
+			table.insert(ownedList, {
+				id = entry.id,
+				displayName = entry.displayName,
+				tier = entry.tier,
+				rarity = entry.rarity,
+				enabled = entry.enabled,
+			})
 			ownedById[entry.id] = { displayName = entry.displayName, tier = entry.tier }
 		end
 	end
@@ -361,11 +401,13 @@ local function refreshCatalog()
 
 	for i, entry in ipairs(catalog.powerups) do
 		catalogById[entry.id] = entry
+		local retired = entry.enabled == false
 
 		local row = Instance.new("Frame")
 		row.Size = UDim2.new(1, -6, 0, 72)
 		row.LayoutOrder = i
 		row.BackgroundColor3 = UIStyle.Colors.Row
+		row.BackgroundTransparency = retired and 0.35 or 0
 		row.BorderSizePixel = 0
 		row.Parent = gachaRefs.rows
 
@@ -373,12 +415,21 @@ local function refreshCatalog()
 		rowCorner.CornerRadius = UDim.new(0, UIStyle.Corner)
 		rowCorner.Parent = row
 
-		local nameLabel = UIStyle.MakeLabel(row, entry.displayName .. "   " .. tostring(entry.percent) .. "%")
+		-- A retired Charm has no roll odds to show (the server leaves it out of the
+		-- odds math entirely), so it carries the tag where the percent would be.
+		local nameLabel = UIStyle.MakeLabel(
+			row,
+			retired and (entry.displayName .. "   " .. RETIRED_TAG)
+				or (entry.displayName .. "   " .. tostring(entry.percent) .. "%")
+		)
 		nameLabel.Size = UDim2.new(1, -10, 0, 22)
 		nameLabel.Position = UDim2.new(0, 5, 0, 3)
 		nameLabel.FontFace = UIStyle.HeaderFontFace
-		nameLabel.TextColor3 = RARITY_COLOR[entry.rarity] or UIStyle.Colors.TextPrimary
+		nameLabel.TextColor3 = retired and UIStyle.Colors.TextDim
+			or (RARITY_COLOR[entry.rarity] or UIStyle.Colors.TextPrimary)
 
+		-- Tier and banked duplicates keep showing for a retired Charm: that data is
+		-- preserved, and the row saying so is how the player knows it.
 		local ownedText
 		if entry.tier then
 			ownedText = "Tier " .. tostring(entry.tier)
@@ -390,8 +441,9 @@ local function refreshCatalog()
 		ownedLabel.Size = UDim2.new(1, -10, 0, 18)
 		ownedLabel.Position = UDim2.new(0, 5, 0, 27)
 
-		-- Upgrade only when owned, enough duplicates banked, and below max tier.
-		if entry.tier and entry.duplicates >= entry.duplicatesNeeded and entry.tier < entry.maxTier then
+		-- Upgrade only when owned, enough duplicates banked, below max tier - and
+		-- never for a retired Charm; there is nothing to spend the tier on.
+		if not retired and entry.tier and entry.duplicates >= entry.duplicatesNeeded and entry.tier < entry.maxTier then
 			local upgradeButton = UIStyle.MakeButton(row, "Upgrade")
 			upgradeButton.Size = UDim2.fromOffset(130, 20)
 			upgradeButton.Position = UDim2.new(0, 5, 0, 48)
@@ -554,10 +606,14 @@ local function playRollSequence(displayName, rarity, rollStatus)
 		skipped = true
 	end)
 
-	-- Names to flicker through, drawn from the catalog we already have.
+	-- Names to flicker through, drawn from the catalog we already have. Retired
+	-- Charms are left out: the spin must only ever show outcomes that were
+	-- genuinely possible.
 	local spinPool = {}
 	for _, entry in pairs(catalogById) do
-		table.insert(spinPool, entry)
+		if entry.enabled ~= false then
+			table.insert(spinPool, entry)
+		end
 	end
 
 	task.spawn(function()

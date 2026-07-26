@@ -1,14 +1,14 @@
 --[[
 	MatchService.lua
 	Owns the match lifecycle: starting a round, evaluating the win condition on
-	every relevant trigger (kills, meeting resolution, task completion), the
-	MatchEnded broadcast, a timed end screen, then an in-place restart.
+	every relevant trigger (kills, meeting resolution, the Convergence completing),
+	the MatchEnded broadcast, a timed end screen, then an in-place restart.
 
-	IMPORTANT: this module must NEVER require KillSystem, MeetingSystem, or
-	PowerupService - those require MatchService. The OnMatchStart hook is the
-	reverse channel that keeps the dependency one-directional and cycle-free:
-	those services register a reset callback here rather than MatchService
-	reaching into their internals.
+	IMPORTANT: this module must NEVER require KillSystem, MeetingSystem,
+	PowerupService or RitualService - those require MatchService. The OnMatchStart
+	hook is the reverse channel that keeps the dependency one-directional and
+	cycle-free: those services register a reset callback here rather than
+	MatchService reaching into their internals.
 ]]
 
 local Players = game:GetService("Players")
@@ -48,9 +48,8 @@ function MatchService.OnMatchStart(callback)
 end
 
 -- The crew's victory objective, behind a swappable seam. fn() -> boolean, true
--- when the crew objective is complete. The default (set at the bottom of this
--- file) is today's task-completion computation, verbatim. Phase 1 swaps in a new
--- provider without touching EvaluateWinCondition - see the PHASE 1 SEAM comment.
+-- when the crew objective is complete. INJECTED by Bootstrap (see the seam block
+-- at the bottom of this file) - there is no default any more.
 local crewObjectiveProvider = nil
 
 function MatchService.SetCrewObjectiveProvider(fn)
@@ -100,20 +99,22 @@ function MatchService.StartMatch()
 	broadcastStatus()
 end
 
--- trigger: "Kill" | "MeetingResolved" | "TaskCompleted" | "PlayerLeft"
+-- trigger: "Kill" | "MeetingResolved" | "Ritual" | "PlayerLeft"
 function MatchService.EvaluateWinCondition(trigger)
 	if matchState ~= "InProgress" then
 		return
 	end
 
-	local objectiveComplete = crewObjectiveProvider()
+	-- Bootstrap injects the provider before StartRoundLoop, so it is always set by
+	-- the time a match is InProgress; the nil guard only covers boot order.
+	local objectiveComplete = crewObjectiveProvider ~= nil and crewObjectiveProvider() == true
 
-	-- Completing a task never changes alive counts, so it must never be able to
-	-- hand impostors a parity (impostors >= crew) win. This also keeps 2-player
-	-- test rounds playable - in a 1v1, parity is true from the first second, and
-	-- without this gate the first task completion would instantly end the match
-	-- as an impostor win.
-	local includeParity = trigger ~= "TaskCompleted"
+	-- EVERY trigger now includes parity. The old exclusion existed solely for
+	-- "TaskCompleted", which can't change alive counts - and that trigger is gone
+	-- along with the task win condition. "Ritual" is no exception: the Convergence
+	-- is the crew objective itself, so a completed channel wins the crew the match
+	-- through the ordinary CheckWinCondition flow.
+	local includeParity = true
 
 	local winner = RoleManager.CheckWinCondition(objectiveComplete, includeParity)
 
@@ -240,26 +241,18 @@ function MatchService.StartRoundLoop()
 end
 
 -- ============================================================================
--- PHASE 1 SEAM - RitualService replaces this provider with brazier/Convergence
--- completion, and the TaskCompleted trigger (the OnTaskCompleted hook below) is
--- removed then. Until that day, tasks win matches EXACTLY as they always have:
--- the body below is the verbatim task-completion computation that used to live
--- inline in EvaluateWinCondition. nil total = "no tasks exist this match, the
--- clause must not fire"; GetRemainingCount is only read when tasks exist, which
--- also guards the zero-stations case from instantly ending every match.
+-- PHASE 1 SEAM - SWAPPED (docs/DESIGN.md section 3). The crew objective is no
+-- longer task completion: it is RitualService.IsComplete, the Convergence channel.
+-- TASKS NO LONGER WIN MATCHES. Tasks feed braziers, braziers arm the Convergence,
+-- the Convergence wins - so the old default provider AND the TaskCompleted trigger
+-- registration that used to live here are both GONE, not disabled.
+--
+-- The provider is INJECTED BY BOOTSTRAP rather than required here, and that is a
+-- cycle constraint, not a style choice: RitualService requires MatchService (for
+-- GetState / OnMatchStart / EvaluateWinCondition), so MatchService requiring
+-- RitualService back would close the loop. SetCrewObjectiveProvider is already
+-- public, so the composition root wires it:
+--     MatchService.SetCrewObjectiveProvider(RitualService.IsComplete)
 -- ============================================================================
-local function defaultCrewObjectiveProvider()
-	local total = TaskManager.GetTotalCount()
-	if total <= 0 then
-		return false
-	end
-	return TaskManager.GetRemainingCount() <= 0
-end
-
-MatchService.SetCrewObjectiveProvider(defaultCrewObjectiveProvider)
-
-TaskManager.OnTaskCompleted(function()
-	MatchService.EvaluateWinCondition("TaskCompleted")
-end)
 
 return MatchService

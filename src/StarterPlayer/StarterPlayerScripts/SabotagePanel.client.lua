@@ -20,6 +20,12 @@
 	delay starts at RoleAssigned (match start). Purely a label; nothing here gates
 	the remote, and no remote is ever polled.
 
+	Desecrate mirrors a SECOND, independent 45s cooldown, matching the server's
+	separate desecrateReadyAt: it starts on the Desecrate omen broadcast (a success
+	- the server does not consume the cooldown when there was nothing to snuff) and
+	is unaffected by the shared cooldown, so the row can read Ready while Lights or
+	the Boiler is running.
+
 	Accepted current behavior: rough visuals, no sabotage sounds, no mobile
 	sizing pass (the rows are click targets, so touch works).
 ]]
@@ -46,17 +52,20 @@ local IMPOSTOR_ROLE = GameConstants.Roles.Vessel
 -- Mirrors of SabotageService's tuning, for the countdown LABEL only.
 local SABOTAGE_COOLDOWN = 30
 local MATCH_START_DELAY = 20
+local DESECRATE_COOLDOWN = 45
 
 -- Row order is the display order.
 local SABOTAGES = {
 	{ type = "Lights", name = "Snuff the Gas Lamps" },
 	{ type = "Boiler", name = "Overload the Boiler" },
+	{ type = "Desecrate", name = "Desecrate the Circle" },
 }
 
 -- Friendly text per rejection reason; falls back to the raw reason string.
 local REASON_TEXT = {
 	Cooldown = "Not ready yet",
 	AlreadyActive = "Something is already broken",
+	NothingToDesecrate = "No flames to snuff",
 }
 
 -- ============================================================
@@ -72,7 +81,7 @@ local setOpen -- forward declared; the header's X needs it before it exists
 
 local panel = UIStyle.MakePanel(
 	screenGui,
-	UDim2.fromOffset(220, 170),
+	UDim2.fromOffset(220, 220), -- one row taller than it was, for Desecrate
 	UDim2.new(0, 16, 0.5, 0),
 	Vector2.new(0, 0.5)
 )
@@ -83,7 +92,7 @@ local headerStrip = UIStyle.MakeHeader(panel, "Sabotage", function()
 	setOpen(false)
 end)
 
--- Drag by the header. No resize - the panel is two rows and a status line.
+-- Drag by the header. No resize - the panel is three rows and a status line.
 -- Session-only memory, same as the hub: reset on rejoin by design.
 local DEFAULT_POSITION = panel.Position -- home spot, for the layout reset
 local savedPosition = panel.Position
@@ -132,8 +141,18 @@ end
 -- ============================================================
 local isImpostor = false
 local activeType = nil -- the sabotage currently running, per the last broadcast
-local cooldownUntil = 0 -- os.clock() value the mirrored cooldown label counts to
+local cooldownUntil = 0 -- os.clock() value the mirrored SHARED cooldown counts to
+local desecrateUntil = 0 -- Desecrate's own, independent of the line above
 local statusToken = 0
+
+-- Which mirrored ready-time a row reads. Desecrate is deliberately its own: it
+-- may fire during Lights or the Boiler, so it must not share their cooldown.
+local function readyAtFor(sabotageType)
+	if sabotageType == "Desecrate" then
+		return desecrateUntil
+	end
+	return cooldownUntil
+end
 
 setOpen = function(open)
 	-- Crew never get the panel, whatever the key says.
@@ -145,8 +164,10 @@ setOpen = function(open)
 end
 
 local function refreshRows()
-	local remaining = cooldownUntil - os.clock()
+	local now = os.clock()
 	for _, row in ipairs(rows) do
+		-- Per-row now, not one shared number: Desecrate runs its own clock.
+		local remaining = readyAtFor(row.type) - now
 		if activeType == row.type then
 			row.stateLabel.Text = "Active"
 			row.stateLabel.TextColor3 = UIStyle.Colors.Negative
@@ -197,6 +218,20 @@ sabotageStatusEvent.OnClientEvent:Connect(function(data)
 		return
 	end
 
+	if data.instant then
+		-- An INSTANT sabotage is a one-shot announcement, not world state: it never
+		-- sets `active`, so this payload must never be read below as "the running
+		-- sabotage just ended" - doing so would wrongly arm the shared cooldown
+		-- (and wipe activeType) every time Desecrate fired mid-Lights.
+		if data.type == "Desecrate" then
+			-- Arrived at all = the server accepted it, so its own cooldown is armed.
+			-- A rejected press (nothing lit) never reaches here and costs nothing.
+			desecrateUntil = os.clock() + DESECRATE_COOLDOWN
+		end
+		refreshRows()
+		return
+	end
+
 	local wasActive = activeType ~= nil
 	activeType = data.active and data.type or nil
 	if wasActive and activeType == nil then
@@ -208,9 +243,11 @@ end)
 
 roleAssignedEvent.OnClientEvent:Connect(function(role)
 	isImpostor = (role == IMPOSTOR_ROLE)
-	-- Fresh match: no sabotage running, and the server armed the opening delay.
+	-- Fresh match: no sabotage running, and the server armed the opening delay -
+	-- which it applies to Desecrate's clock too.
 	activeType = nil
 	cooldownUntil = os.clock() + MATCH_START_DELAY
+	desecrateUntil = os.clock() + MATCH_START_DELAY
 	statusLabel.Text = ""
 	setOpen(false) -- always starts closed; the key opens it
 	refreshRows()

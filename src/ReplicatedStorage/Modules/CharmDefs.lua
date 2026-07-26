@@ -41,7 +41,24 @@ CharmDefs.Charms = {
 		faces = { Crew = nil, Vessel = nil },
 		omen = nil,
 	},
+	-- ============================================================
+	-- RETIRED PENDING REWORK per design review. The original Flashlight never
+	-- earned its slot: it only did anything during a Lights sabotage, and the
+	-- price of using it was lighting yourself up for the Vessel. The Wick redesign
+	-- (docs/DESIGN.md section 7) replaces it with a real dual-face Charm; until
+	-- that lands this Charm does not enter play.
+	--
+	-- enabled = false is the ONE switch. Absent means enabled - every other Charm
+	-- omits it. Consumers: GachaService (out of the roll pool and the odds math),
+	-- LoadoutService (rejects it, and drops it when promoting a saved loadout),
+	-- PowerupService (TryUse rejects it), HubUI (renders it dimmed).
+	--
+	-- OWNERSHIP DATA FOR THIS CHARM IS PRESERVED AND MUST NEVER BE DELETED. Tiers
+	-- and banked duplicates stay in every player's persisted record exactly as
+	-- they are, so un-retiring it needs no migration and no restitution.
+	-- ============================================================
 	Flashlight = {
+		enabled = false,
 		displayName = "Flashlight",
 		rarity = "Common",
 		gachaWeight = 30,

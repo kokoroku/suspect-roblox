@@ -142,6 +142,11 @@ local function applyLighting()
 	-- fog to the tier's fogEnd instead of the crew value; nothing else changes.
 	-- The candle coexists with it happily - the flashlight's glow is a separate
 	-- server-side light on the character, this is local fog.
+	--
+	-- DORMANT: Flashlight is RETIRED PENDING REWORK (see CharmDefs), so the server
+	-- never fires its PowerupEffect and flashlightActive can no longer become true
+	-- - this override always falls through to CREW_FOG_END today. The path stays
+	-- intact for the Wick redesign (docs/DESIGN.md section 7).
 	Lighting.FogEnd = flashlightActive and flashlightFogEnd or CREW_FOG_END
 	Lighting.Ambient = CREW_AMBIENT
 	Lighting.OutdoorAmbient = CREW_OUTDOOR_AMBIENT
