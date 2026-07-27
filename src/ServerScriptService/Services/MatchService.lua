@@ -56,6 +56,24 @@ function MatchService.SetCrewObjectiveProvider(fn)
 	crewObjectiveProvider = fn
 end
 
+-- ============================================================
+-- DEBUG ONLY (DebugService's "ForceStart" action). Skips the wait for players
+-- and the rest of the intermission.
+--
+-- A REQUEST the round loop consumes on its next poll, deliberately not a direct
+-- StartMatch call: the loop stays the single owner of round progression, so this
+-- can never race it into starting two matches. No behavior at all when unused.
+-- ============================================================
+local forceStartRequested = false
+
+function MatchService.DebugForceStart()
+	if matchState ~= "Waiting" and matchState ~= "Intermission" then
+		return false
+	end
+	forceStartRequested = true
+	return true
+end
+
 -- Builds the RoundStatus payload for the CURRENT state.
 local function statusPayload()
 	local payload = { state = matchState }
@@ -180,10 +198,11 @@ end)
 function MatchService.StartRoundLoop()
 	task.spawn(function()
 		while true do
-			-- (a) Wait for enough players.
+			-- (a) Wait for enough players. A pending debug force-start also releases
+			-- this wait, so a solo verify session can start a round at all.
 			matchState = "Waiting"
 			broadcastStatus()
-			while #Players:GetPlayers() < MIN_PLAYERS do
+			while #Players:GetPlayers() < MIN_PLAYERS and not forceStartRequested do
 				task.wait(1)
 			end
 
@@ -199,11 +218,17 @@ function MatchService.StartRoundLoop()
 			end
 
 			-- (c) Countdown, abandoning back to (a) if players drop below minimum.
+			-- Length is read HERE, at the countdown's start, so FAST_INTERMISSION
+			-- applies from the next intermission on rather than being frozen at boot.
 			local abandoned = false
-			for s = INTERMISSION_DURATION, 1, -1 do
+			local countdown = DebugFlags.FAST_INTERMISSION and 3 or INTERMISSION_DURATION
+			for s = countdown, 1, -1 do
 				intermissionSecondsLeft = s
 				broadcastStatus()
 				task.wait(1)
+				if forceStartRequested then
+					break -- DEBUG: skip the rest of the countdown, start below
+				end
 				if #Players:GetPlayers() < MIN_PLAYERS then
 					abandoned = true
 					break
@@ -211,7 +236,9 @@ function MatchService.StartRoundLoop()
 			end
 
 			if not abandoned then
-				-- (d) Start the match.
+				-- (d) Start the match. Any force-start request is consumed here, so
+				-- it can only ever skip ONE intermission.
+				forceStartRequested = false
 				MatchService.StartMatch()
 
 				-- (e) Wait for the match to end.

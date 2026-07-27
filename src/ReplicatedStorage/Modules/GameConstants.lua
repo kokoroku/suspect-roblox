@@ -21,6 +21,20 @@ GameConstants.Roles = {
 	Vessel = "Impostor",
 }
 
+-- Display labels for the internal role ids above. THE DISPLAY LAYER READS THIS
+-- MAP AND NEVER THE IDS: an id like "Impostor" is a stable comparison value and a
+-- persisted one, so it must never reach a player's screen just because it happens
+-- to be a readable English word.
+--
+-- Partial by design today - only the surfaces re-themed so far go through it. The
+-- fuller terminology sweep (end screen, meeting wording, every remaining label)
+-- happens at the identity pass and will consume this same map rather than adding
+-- its own.
+GameConstants.RoleDisplayNames = {
+	[GameConstants.Roles.Crew] = "Crew",
+	[GameConstants.Roles.Vessel] = "Vessel",
+}
+
 GameConstants.Winners = {
 	Crew = "CrewWin",
 	Vessel = "ImpostorWin",

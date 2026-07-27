@@ -34,6 +34,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
 local GameConstants = require(ReplicatedStorage.Modules.GameConstants)
 local TaskDefs = require(ReplicatedStorage.Modules.TaskDefs)
+-- A plain table of booleans that requires nothing, so it cannot close a cycle.
 local DebugFlags = require(ServerScriptService.Services.DebugFlags)
 local RoleManager = require(ServerScriptService.Services.RoleManager)
 local MatchService = require(ServerScriptService.Services.MatchService)
@@ -123,10 +124,6 @@ local stationParts = {}
 -- loop in this codebase): a running loop only acts while it is STILL the token
 -- held here, so a stale loop from a resolved sabotage can never end a match.
 local timerToken = nil
-
-if DebugFlags.ALL_IMPOSTORS then
-	print("[SabotageService] ALL_IMPOSTORS is on - every player's assigned role passes the impostor sabotage gate.")
-end
 
 -- ============================================================
 -- Change hooks + broadcast
@@ -291,7 +288,10 @@ local function triggerInstant(player, sabotageType)
 		return false, "UnknownSabotage"
 	end
 
-	if os.clock() < desecrateReadyAt then
+	-- DEBUG ONLY - NO_COOLDOWNS makes this GATE pass, read here at decision time.
+	-- Only the timer: the NothingToDesecrate check below still applies, so a press
+	-- with no brazier lit is still rejected.
+	if not DebugFlags.NO_COOLDOWNS and os.clock() < desecrateReadyAt then
 		return false, "Cooldown"
 	end
 
@@ -342,7 +342,11 @@ function SabotageService.Trigger(player, sabotageType)
 	if active ~= nil then
 		return false, "AlreadyActive"
 	end
-	if os.clock() < cooldownReadyAt then
+	-- DEBUG ONLY - NO_COOLDOWNS makes this GATE pass, read here at decision time.
+	-- The AlreadyActive check above is NOT bypassed, nor is any gate before it
+	-- (match state, meeting, alive, role): this only removes the wait, never the
+	-- one-sabotage-at-a-time rule the fix flow depends on.
+	if not DebugFlags.NO_COOLDOWNS and os.clock() < cooldownReadyAt then
 		return false, "Cooldown"
 	end
 

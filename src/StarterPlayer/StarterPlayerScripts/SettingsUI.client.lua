@@ -4,7 +4,10 @@
 	(the shared module) and nothing else.
 
 	Sections: Audio (master volume slider), Keybinds (remappable rows + the fixed
-	world-interact row), Interface (reset UI layout), Accessibility (reduce effects).
+	world-interact row), Interface (reset UI layout), Accessibility (reduce effects),
+	and - for mods only, appended last - Debug (see the section at the bottom of
+	this file). A non-mod's window is pixel-identical to what it was before the
+	debug menu existed: the section is not hidden, it is never built.
 
 	Layout: ONE scroll surface under the header - every section flows in a single
 	UIListLayout, so nothing clips and everything is reachable by scrolling.
@@ -78,8 +81,15 @@ window.Visible = false
 -- Sinks clicks so a click on the panel can't reach a world ProximityPrompt.
 window.Active = true
 
+-- Assigned at the bottom of this file by the debug section; nil until then, and
+-- nil forever for anyone whose client never builds one.
+local onSettingsOpened = nil
+
 local function setOpen(open)
 	window.Visible = open
+	if open and onSettingsOpened then
+		onSettingsOpened()
+	end
 end
 
 local headerStrip = UIStyle.MakeHeader(window, "Settings", function()
@@ -600,5 +610,160 @@ ClientSettings.Changed.Event:Connect(function(settingName)
 		renderReduce(ClientSettings.GetReduceEffects())
 	elseif rowRefreshers[settingName] then
 		rowRefreshers[settingName]()
+	end
+end)
+
+-- ============================================================
+-- e) DEBUG - MODS ONLY. Built LAST, so it always sits at the bottom of the
+-- scroll surface below everything a normal player came here for.
+--
+-- Asked for on EVERY open, not once: mod status and the flag values can both
+-- change during a session, and re-asking is cheaper than keeping a stale menu
+-- honest. A nil answer means "not a mod", and then NOTHING is built - no header,
+-- no placeholder, no hidden frame. There is no debug section to find.
+--
+-- This is presentation only. The server re-validates mod status inside
+-- DebugService on every remote it receives, so nothing here is load-bearing for
+-- access; a non-mod who fires these remotes by hand is rejected there.
+-- ============================================================
+local getDebugStateFn = Remotes.Get(Remotes.FunctionNames.GetDebugState)
+local setDebugFlagEvent = Remotes.Get(Remotes.Names.SetDebugFlag)
+local runDebugActionEvent = Remotes.Get(Remotes.Names.RunDebugAction)
+local debugStateChangedEvent = Remotes.Get(Remotes.Names.DebugStateChanged)
+
+-- Every instance this section owns, so a rebuild (or a demotion) removes all of
+-- it and leaves the rest of the window untouched.
+local debugInstances = {}
+-- flag name -> render(on), so a DebugStateChanged broadcast can repaint rows.
+local debugToggleRenderers = {}
+-- Last known flag values, so an optimistic click knows what it is inverting.
+local debugFlags = {}
+-- Guards the async fetch: a newer open supersedes an in-flight one.
+local debugToken = 0
+
+local function clearDebugSection()
+	debugToggleRenderers = {}
+	for _, instance in ipairs(debugInstances) do
+		instance:Destroy()
+	end
+	debugInstances = {}
+end
+
+-- Alphabetical so the menu's order never depends on pairs() iteration order,
+-- which would reshuffle the rows between opens.
+local function sortedKeys(map)
+	local keys = {}
+	for key in pairs(map or {}) do
+		table.insert(keys, key)
+	end
+	table.sort(keys)
+	return keys
+end
+
+local function buildDebugSection(state)
+	clearDebugSection()
+
+	-- Negative-tinted, unlike every other section's Accent: this must never read
+	-- as one more player-facing feature.
+	local header = makeSectionLabel("DEBUG")
+	header.TextColor3 = UIStyle.Colors.Negative
+	table.insert(debugInstances, header)
+
+	-- ---- Toggles: styled exactly like Reduce Screen Effects ----
+	for _, name in ipairs(sortedKeys(state.meta)) do
+		local info = state.meta[name] or {}
+
+		local row = makeRow(32)
+		table.insert(debugInstances, row)
+
+		local label = UIStyle.MakeLabel(row, info.label or name)
+		label.Size = UDim2.new(1, -70, 1, 0)
+
+		local toggle = UIStyle.MakeButton(row, "OFF")
+		toggle.AnchorPoint = Vector2.new(1, 0.5)
+		toggle.Position = UDim2.new(1, 0, 0.5, 0)
+		toggle.Size = UDim2.fromOffset(60, 28)
+
+		local function render(on)
+			toggle.Text = on and "ON" or "OFF"
+			UIStyle.SetButtonSelected(toggle, on, UIStyle.Colors.Positive)
+		end
+		render(debugFlags[name] == true)
+		debugToggleRenderers[name] = render
+
+		toggle.MouseButton1Click:Connect(function()
+			-- Optimistic: paint the new state immediately, then tell the server.
+			-- The DebugStateChanged broadcast is what makes it true - and it is
+			-- also what corrects this row if the server refused, and what keeps a
+			-- second mod's open menu in step with this one.
+			local nextValue = not (debugFlags[name] == true)
+			debugFlags[name] = nextValue
+			render(nextValue)
+			setDebugFlagEvent:FireServer(name, nextValue)
+		end)
+
+		if info.description then
+			table.insert(debugInstances, makeHelpLine(info.description))
+		end
+	end
+
+	-- ---- Actions: full-width buttons, fire and forget ----
+	for _, name in ipairs(sortedKeys(state.actions)) do
+		local row = makeRow(32)
+		table.insert(debugInstances, row)
+
+		local button = UIStyle.MakeButton(row, state.actions[name])
+		button.Size = UDim2.new(1, 0, 1, 0)
+
+		local flashToken = 0
+		button.MouseButton1Click:Connect(function()
+			runDebugActionEvent:FireServer(name)
+			-- A brief Positive flash and nothing else. There is no result to
+			-- report here on purpose: what an action did is observed in the world
+			-- (a match starts, braziers light, you drop dead), not in this menu.
+			flashToken += 1
+			local myToken = flashToken
+			UIStyle.SetButtonSelected(button, true, UIStyle.Colors.Positive)
+			task.delay(0.25, function()
+				if myToken == flashToken and button.Parent then
+					UIStyle.SetButtonSelected(button, false, UIStyle.Colors.Positive)
+				end
+			end)
+		end)
+	end
+
+	table.insert(debugInstances, makeHelpLine("Session only - resets on server restart."))
+end
+
+onSettingsOpened = function()
+	debugToken += 1
+	local myToken = debugToken
+	task.spawn(function()
+		-- pcall because InvokeServer can throw if the server errors mid-call; a
+		-- failed debug fetch must never break opening the settings window.
+		local ok, state = pcall(function()
+			return getDebugStateFn:InvokeServer()
+		end)
+		if myToken ~= debugToken then
+			return -- a newer open already superseded this fetch
+		end
+		if not ok or type(state) ~= "table" then
+			clearDebugSection() -- not a mod (or the call failed): leave no trace
+			return
+		end
+		debugFlags = state.flags or {}
+		buildDebugSection(state)
+	end)
+end
+
+-- Server-pushed truth. Repaints every live row, so two mods with the menu open
+-- never disagree about what is on.
+debugStateChangedEvent.OnClientEvent:Connect(function(flags)
+	if type(flags) ~= "table" then
+		return
+	end
+	debugFlags = flags
+	for name, render in pairs(debugToggleRenderers) do
+		render(flags[name] == true)
 	end
 end)

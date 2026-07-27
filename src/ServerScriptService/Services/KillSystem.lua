@@ -49,6 +49,16 @@ function KillSystem.OnKillPerformed(callback)
 	table.insert(killPerformedCallbacks, callback)
 end
 
+-- DEBUG ONLY - answers "is this player a mod?" for GOD_MODE. Injected by
+-- DebugService, which requires THIS module and never the reverse, so the
+-- dependency stays one-directional. nil until then, and GOD_MODE is a no-op
+-- while it is nil.
+local isModPredicate = nil
+
+function KillSystem.SetModPredicate(fn)
+	isModPredicate = fn
+end
+
 -- ============================================================
 -- One-time setup: ragdoll parts collide with the world/other players
 -- normally, but NOT with each other. Without this, a resting rig's
@@ -240,7 +250,18 @@ function KillSystem.AttemptKill(killer, target)
 		return false, "CannotKillImpostor"
 	end
 
-	if os.clock() < (killCooldowns[killer] or 0) then
+	-- DEBUG ONLY - GOD_MODE. A mod target is rejected exactly as an invalid one
+	-- is, and from the same place in the sequence, so the killer keeps their
+	-- cooldown and nothing downstream can tell the difference.
+	if DebugFlags.GOD_MODE and isModPredicate and isModPredicate(target) then
+		return false, "InvalidTarget"
+	end
+
+	-- DEBUG ONLY - NO_COOLDOWNS makes this GATE pass, read here at decision time.
+	-- Arming below is left alone: with the gate no longer consulting it, an armed
+	-- cooldown costs nothing while the flag is on and real pacing resumes the
+	-- moment it goes off. Every other kill gate is untouched.
+	if not DebugFlags.NO_COOLDOWNS and os.clock() < (killCooldowns[killer] or 0) then
 		return false, "OnCooldown"
 	end
 
@@ -256,7 +277,15 @@ function KillSystem.AttemptKill(killer, target)
 
 	-- Killer-side client feedback (vignette / FOV punch / cooldown chip). The chip
 	-- counts down the same cooldown the system just applied.
-	Remotes.Get(Remotes.Names.KillFeedback):FireClient(killer, { cooldown = cooldown })
+	--
+	-- DEBUG ONLY - NO_COOLDOWNS, read here at decision time: the gate above ignores
+	-- the armed cooldown, so reporting it would tick a countdown against a kill the
+	-- killer can already make again. Report 0 and the chip shows none. ONLY the
+	-- DISPLAYED value changes - the line above still arms the real cooldown - so
+	-- flipping the flag off mid-session restores honest countdowns from the very
+	-- next kill, with no stale client state to correct.
+	local reportedCooldown = DebugFlags.NO_COOLDOWNS and 0 or cooldown
+	Remotes.Get(Remotes.Names.KillFeedback):FireClient(killer, { cooldown = reportedCooldown })
 
 	-- World feedback at the body: a nearby-audible snap and a floor blood pool.
 	local corpse = target.Character
@@ -271,6 +300,26 @@ function KillSystem.AttemptKill(killer, target)
 		callback(killer, target)
 	end
 
+	return true
+end
+
+-- ============================================================
+-- DEBUG ONLY (DebugService's "KillMe" action). Cooldowns are no longer reset from
+-- here by anything - the NO_COOLDOWNS flag makes the gate above pass for as long
+-- as it is on, which is why the one-shot reset this block used to mention is gone.
+-- DebugKill runs the REAL death conversion - the same SetAlive, the same
+-- ragdoll, the same OnAliveChanged fan-out and win check a kill produces - so
+-- every hook that watches for a death fires exactly as it would in play. No
+-- killer is credited and OnKillPerformed is deliberately NOT fired: nobody
+-- performed this kill, so nothing may react as though someone did.
+-- ============================================================
+function KillSystem.DebugKill(player)
+	if not RoleManager.IsAlive(player) then
+		return false
+	end
+	RoleManager.SetAlive(player, false)
+	turnIntoBody(player)
+	MatchService.EvaluateWinCondition("Kill")
 	return true
 end
 

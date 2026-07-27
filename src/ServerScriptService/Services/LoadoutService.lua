@@ -19,6 +19,8 @@ local CharmDefs = require(ReplicatedStorage.Modules.CharmDefs)
 -- and RoleManager requires only Remotes - neither ever requires LoadoutService.
 local MatchService = require(ServerScriptService.Services.MatchService)
 local RoleManager = require(ServerScriptService.Services.RoleManager)
+-- Cycle-safe: DebugFlags is a leaf - a table of booleans with no requires at all.
+local DebugFlags = require(ServerScriptService.Services.DebugFlags)
 
 local LoadoutService = {}
 
@@ -67,7 +69,54 @@ function LoadoutService.SetLoadout(player, powerupIds)
 		end
 	end
 
+	-- ============================================================
+	-- THE WEIGHT BUDGET (docs/DESIGN.md sections 7 and 9). Common 1 / Rare 2 /
+	-- Epic 3, cap 4 across the two slots - so a double-Epic loadout is impossible
+	-- BY CONSTRUCTION, not by tuning the Charms down. This is the law that lets
+	-- Charms be strong: progression buys expression, not oppression. In Phase 4 a
+	-- Binding adds +1 to its Core's weight and this same sum keeps holding.
+	--
+	-- Checked AFTER every per-entry test above, so a player is always told the
+	-- most specific truth first (Retired / NotOwned) and only hears about the
+	-- budget once the loadout is otherwise legal.
+	-- ============================================================
+	local totalWeight = 0
+	for _, powerupId in ipairs(powerupIds) do
+		local def = CharmDefs.Charms[powerupId]
+		totalWeight += (def and def.loadoutWeight) or 0
+	end
+	if totalWeight > CharmDefs.LOADOUT_WEIGHT_CAP then
+		return false, "OverWeight"
+	end
+
 	pendingLoadouts[player] = table.clone(powerupIds)
+
+	-- ============================================================
+	-- DEBUG ONLY - LIVE_LOADOUT (DebugFlags). Verify sessions need to cycle
+	-- through Charms without restarting a round between each, so this promotes the
+	-- save straight onto the ACTIVE set and tells the client, which re-renders its
+	-- slots through the existing LoadoutApplied listener - no client change.
+	--
+	-- Placed HERE, after every validation above and after pending is staged, so
+	-- the flag can only ever ADD an effect. It cannot skip ownership, slot count,
+	-- duplicates or the weight budget - a flag that masked a validation bug would
+	-- make the thing it exists to test untrustworthy.
+	--
+	-- A Charm that is mid-effect when swapped out is deliberately NOT cancelled.
+	-- Its effect ends through its own paths (duration expiry, meeting, death,
+	-- match start) exactly as it would have; only a FUTURE TryUse reads the new
+	-- active set. Cancelling here would mean reaching into PowerupService's
+	-- registry from this service, which is both a require cycle and a second
+	-- owner of effect lifetime.
+	--
+	-- With the flag false this whole block is skipped and the path above is
+	-- byte-identical to today.
+	-- ============================================================
+	if DebugFlags.LIVE_LOADOUT then
+		activeLoadouts[player] = table.clone(powerupIds)
+		Remotes.Get(Remotes.Names.LoadoutApplied):FireClient(player, activeLoadouts[player])
+	end
+
 	return true
 end
 
@@ -97,6 +146,14 @@ MatchService.OnMatchStart(function()
 		-- anyone's saved data: their pending set and the ownership behind it are
 		-- untouched, so the Charm simply stops arriving. Un-retiring it later needs
 		-- no migration - the next promotion just lets it through again.
+		--
+		-- THE WEIGHT CAP IS DELIBERATELY NOT APPLIED HERE. A pending loadout saved
+		-- before the cap existed (or before a Charm's weight changed) is
+		-- GRANDFATHERED: it keeps promoting and keeps playing until its owner next
+		-- tries to save, and that save is what fails with "OverWeight". Same
+		-- principle as the retirement rule above - no retroactive surgery on data a
+		-- player saved legally, and nobody gets silently disarmed at a match start
+		-- they were not present for.
 		local promoted = {}
 		for _, powerupId in ipairs(pendingLoadouts[player] or {}) do
 			local def = CharmDefs.Charms[powerupId]

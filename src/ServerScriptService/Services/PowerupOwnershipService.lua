@@ -12,8 +12,12 @@
 
 local Players = game:GetService("Players")
 local ServerScriptService = game:GetService("ServerScriptService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local PlayerDataService = require(ServerScriptService.Services.PlayerDataService)
+-- Pure data with no requires of its own, so this is not the cycle that requiring
+-- PowerupService here would be (PowerupService requires US).
+local CharmDefs = require(ReplicatedStorage.Modules.CharmDefs)
 
 local PowerupOwnershipService = {}
 
@@ -129,6 +133,27 @@ function PowerupOwnershipService.DebugGrantMax(player, definitions)
 	owned[player] = owned[player] or {}
 	for id in pairs(definitions) do
 		owned[player][id] = { tier = MAX_TIER, duplicates = 0 }
+	end
+end
+
+-- ============================================================
+-- DEBUG ONLY (DebugService's "MaxCharms" action): every ENABLED Charm to max
+-- tier for one player. Retired Charms are skipped - granting something that can
+-- never be equipped would only make the inventory lie.
+--
+-- DELIBERATELY DIFFERENT FROM DebugGrantMax ABOVE, which is session-only and
+-- never syncs. This one DOES persist (syncEntry -> MarkDirty): it is a mod
+-- granting themselves a collection on their own account, and a grant that
+-- vanished on rejoin would be a worse tool than no grant at all. That makes it
+-- the one debug path that writes to the DataStore - keep MOD_USER_IDS tight.
+-- ============================================================
+function PowerupOwnershipService.DebugMaxAll(player)
+	owned[player] = owned[player] or {}
+	for id, def in pairs(CharmDefs.Charms) do
+		if def.enabled ~= false then
+			owned[player][id] = { tier = MAX_TIER, duplicates = 0 }
+			syncEntry(player, id)
+		end
 	end
 end
 

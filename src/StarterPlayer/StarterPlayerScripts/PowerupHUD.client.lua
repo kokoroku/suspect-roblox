@@ -18,6 +18,11 @@ local UserInputService = game:GetService("UserInputService")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
 local UIStyle = require(ReplicatedStorage.Modules.UIStyle)
+-- Both pure data with no requires of their own, loadable from the client. The
+-- reveal toast is the only reader here: it needs the Charm's current display name
+-- and the display label for a role id.
+local CharmDefs = require(ReplicatedStorage.Modules.CharmDefs)
+local GameConstants = require(ReplicatedStorage.Modules.GameConstants)
 local ClientSettings = require(script.Parent:WaitForChild("ClientSettings"))
 local usePowerupEvent = Remotes.Get(Remotes.Names.UsePowerup)
 local powerupUseResultEvent = Remotes.Get(Remotes.Names.PowerupUseResult)
@@ -40,6 +45,11 @@ local REASON_TEXT = {
 	NoTargetNearby = "No one close enough",
 	LightsAreOn = "Only works in the dark",
 	NoUsesLeft = "No uses left this match",
+	-- Defensive only: OverWeight is a LoadoutResult reason (the hub's Save path),
+	-- and TryUse has no way to produce it. Mapped here so that if the weight
+	-- budget ever grows a use-time check, it reads as English on day one instead
+	-- of leaking a raw enum onto the HUD.
+	OverWeight = "Too heavy - lighten the loadout",
 }
 
 local slotIds = { nil, nil } -- powerupId equipped in each slot (or nil)
@@ -294,7 +304,14 @@ end)
 -- Seer reveal - shown longer than a status flash and on its own label.
 local seerToastToken = 0
 seerResultEvent.OnClientEvent:Connect(function(name, role)
-	seerLabel.Text = "Seer: " .. tostring(name) .. " is " .. tostring(role)
+	-- Both halves come from data, never from a literal: the Charm's name from
+	-- CharmDefs (so it reads "Augur", and follows any future rename on its own),
+	-- and the role through the display map (so an internal id like "Impostor"
+	-- cannot reach the screen). The raw id is kept as the fallback - an unmapped
+	-- role should degrade to something truthful, not to blank.
+	local charmName = CharmDefs.Charms.Seer.displayName
+	local roleText = GameConstants.RoleDisplayNames[role] or tostring(role)
+	seerLabel.Text = charmName .. ": " .. tostring(name) .. " is " .. roleText
 	seerToast.Visible = true
 	seerToastToken = seerToastToken + 1
 	local myToken = seerToastToken

@@ -34,7 +34,6 @@ local MatchService = require(ServerScriptService.Services.MatchService)
 local TaskManager = require(ServerScriptService.Services.TaskManager)
 local LightsSystem = require(ServerScriptService.Services.LightsSystem)
 local KillSystem = require(ServerScriptService.Services.KillSystem)
-local DebugFlags = require(ServerScriptService.Services.DebugFlags)
 
 local RitualService = {}
 
@@ -100,10 +99,6 @@ local currentChannelers = {} -- player -> true, refreshed every heartbeat while 
 local channelersPresent = 0
 
 local statusAccum = 0
-
-if DebugFlags.ALL_IMPOSTORS then
-	print("[RitualService] ALL_IMPOSTORS is on - there are no crew, so nothing lights braziers or channels.")
-end
 
 -- ============================================================
 -- Rage hook (the reverse channel to SabotageService - see the header)
@@ -315,6 +310,29 @@ function RitualService.Extinguish()
 
 	broadcast()
 	return true
+end
+
+-- ============================================================
+-- DEBUG ONLY (DebugService's "LightBraziers" / "ExtinguishBraziers" actions).
+-- Both go through the SAME setLit/applyRage/broadcast paths a real task
+-- completion or Desecrate uses, so Rage steps, lamp dimming and the client HUD
+-- all update exactly as they would in play. No behavior when unused.
+-- ============================================================
+function RitualService.DebugLightAll()
+	while #litStack < getThreshold() and lightNext() do
+	end
+	armIfReady()
+	broadcast()
+end
+
+function RitualService.DebugExtinguishAll()
+	for index = 1, #braziers do
+		setLit(index, false)
+	end
+	litStack, litSet = {}, {}
+	armed, channelProgress, channelersPresent, currentChannelers = false, 0, 0, {}
+	applyRage()
+	broadcast()
 end
 
 -- The crew-objective seam MatchService reads (injected by Bootstrap).

@@ -30,6 +30,10 @@ local SabotageService = require(script.Parent.SabotageService)
 -- Nothing else requires it; it only reacts through RoleManager/MatchService hooks.
 local SpiritService = require(script.Parent.SpiritService)
 local DebugFlags = require(script.Parent.DebugFlags)
+-- Sits at the top of the dependency graph: it requires the services it drives and
+-- nothing requires it back. Requiring it here also injects KillSystem's GOD_MODE
+-- mod predicate (see the bottom of DebugService).
+local DebugService = require(script.Parent.DebugService)
 -- Side-effect service: requiring it is what activates its dead-player broadcasts.
 local SpectateService = require(script.Parent.SpectateService)
 -- Side-effect service (self-wires its match-start reset); also used by the
@@ -44,10 +48,6 @@ local LightsSystem = require(script.Parent.LightsSystem)
 -- root is for, and SetCrewObjectiveProvider is public for this reason.
 -- ============================================================
 MatchService.SetCrewObjectiveProvider(RitualService.IsComplete)
-
-if DebugFlags.ALL_IMPOSTORS then
-	warn("[Suspect] DEBUG MODE: ALL_IMPOSTORS is ON (DebugFlags.lua) - everyone will be an impostor. Do not ship.")
-end
 
 -- ============================================================
 -- Manual respawn control. Roblox auto-respawns characters a few seconds
@@ -213,6 +213,23 @@ Remotes.Get(Remotes.Names.DebugToggleLights).OnServerEvent:Connect(function(play
 		return
 	end
 	LightsSystem.SetLightsOut(not LightsSystem.IsLightsOut())
+end)
+
+-- ============================================================
+-- Debug menu (mod-gated). All three handlers re-validate mod status inside
+-- DebugService - this file is plumbing only and deliberately performs no check
+-- of its own, so there is exactly ONE place the lock lives.
+-- ============================================================
+Remotes.Get(Remotes.FunctionNames.GetDebugState).OnServerInvoke = function(player)
+	return DebugService.GetDebugState(player)
+end
+
+Remotes.Get(Remotes.Names.SetDebugFlag).OnServerEvent:Connect(function(player, name, value)
+	DebugService.SetDebugFlag(player, name, value)
+end)
+
+Remotes.Get(Remotes.Names.RunDebugAction).OnServerEvent:Connect(function(player, name)
+	DebugService.RunDebugAction(player, name)
 end)
 
 -- ============================================================

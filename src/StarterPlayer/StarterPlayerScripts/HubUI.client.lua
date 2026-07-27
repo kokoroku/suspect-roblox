@@ -27,6 +27,10 @@ local Debris = game:GetService("Debris")
 
 local Remotes = require(ReplicatedStorage.Modules.Remotes)
 local UIStyle = require(ReplicatedStorage.Modules.UIStyle)
+-- Pure data, no requires of its own, loadable from the client - the weights and
+-- the cap are read straight from the same table the server enforces against, so
+-- the number on screen can never disagree with the number that rejects a save.
+local CharmDefs = require(ReplicatedStorage.Modules.CharmDefs)
 local ClientSettings = require(script.Parent:WaitForChild("ClientSettings"))
 
 local setLoadoutEvent = Remotes.Get(Remotes.Names.SetLoadout)
@@ -88,6 +92,37 @@ local RARITY_COLOR = {
 -- are preserved and must remain visible - but render dimmed, carry this tag, are
 -- not selectable in the loadout picker, and offer no Upgrade button.
 local RETIRED_TAG = "Being reworked"
+
+-- ============================================================
+-- THE WEIGHT BUDGET (docs/DESIGN.md sections 7 and 9). Common 1 / Rare 2 /
+-- Epic 3, two slots, cap 4 - so no loadout can carry two Epics.
+--
+-- The client blocks an over-cap selection so the rule is learnable at the moment
+-- you bump into it, rather than as a rejection after a Save. THE SERVER REMAINS
+-- THE AUTHORITY: LoadoutService re-sums and rejects with "OverWeight" regardless
+-- of what this file does, and this check exists only to explain the rule, never
+-- to enforce it.
+-- ============================================================
+local WEIGHT_CAP = CharmDefs.LOADOUT_WEIGHT_CAP
+
+local function weightOf(id)
+	local def = CharmDefs.Charms[id]
+	return (def and def.loadoutWeight) or 0
+end
+
+local function selectedWeight()
+	local total = 0
+	for _, id in ipairs(selected) do
+		total += weightOf(id)
+	end
+	return total
+end
+
+-- Friendly text for a save rejection; anything unmapped falls back to the raw
+-- reason string, as it always has.
+local LOADOUT_REASON_TEXT = {
+	OverWeight = "Too heavy - lighten the loadout",
+}
 
 -- ============================================================
 -- Window chrome, built once.
@@ -215,6 +250,20 @@ local function isSelected(id)
 	return table.find(selected, id) ~= nil
 end
 
+-- "Weight 3/4" beside Save, tinted Negative the moment the selection exceeds the
+-- cap. Over-cap should be unreachable through the rows below, so a red reading
+-- here means something got in another way (a stale selection, a weight change) -
+-- which is exactly when the player most needs to see it.
+local function refreshWeightLabel()
+	if not loadoutRefs or not loadoutRefs.weight then
+		return
+	end
+	local total = selectedWeight()
+	loadoutRefs.weight.Text = "Weight " .. tostring(total) .. "/" .. tostring(WEIGHT_CAP)
+	loadoutRefs.weight.TextColor3 = (total > WEIGHT_CAP) and UIStyle.Colors.Negative
+		or UIStyle.Colors.TextDim
+end
+
 local function renderLoadoutRows()
 	if not loadoutRefs then
 		return
@@ -233,6 +282,24 @@ local function renderLoadoutRows()
 		row.TextXAlignment = Enum.TextXAlignment.Left
 		row.TextColor3 = RARITY_COLOR[entry.rarity] or UIStyle.Colors.TextPrimary
 
+		-- Weight chip, riding the right edge of the row next to the tier reading.
+		-- Rarity-tinted, because weight IS rarity (Common 1 / Rare 2 / Epic 3) and
+		-- the two should be learned as one fact. Retired rows leave room for their
+		-- tag, so the chip steps left of it.
+		local chip = UIStyle.MakeLabel(row, "W" .. tostring(weightOf(entry.id)), true)
+		chip.AnchorPoint = Vector2.new(1, 0.5)
+		chip.Position = UDim2.new(1, retired and -(UIStyle.Pad + 114) or -UIStyle.Pad, 0.5, 0)
+		chip.Size = UDim2.fromOffset(26, 18)
+		chip.TextSize = 11
+		chip.TextXAlignment = Enum.TextXAlignment.Center
+		chip.BackgroundTransparency = 0
+		chip.BackgroundColor3 = UIStyle.Colors.Bg
+		chip.TextColor3 = RARITY_COLOR[entry.rarity] or UIStyle.Colors.TextDim
+
+		local chipCorner = Instance.new("UICorner")
+		chipCorner.CornerRadius = UDim.new(0, 4)
+		chipCorner.Parent = chip -- destroyed with the chip
+
 		if retired then
 			-- A Charm retired since this client last saved must not stay stuck in the
 			-- selection: the row is inert, so it could never be clicked back off, and
@@ -246,6 +313,7 @@ local function renderLoadoutRows()
 			-- stands - just visibly not equippable.
 			row.TextColor3 = UIStyle.Colors.TextDim
 			row.BackgroundTransparency = 0.35
+			chip.TextColor3 = UIStyle.Colors.TextDim
 
 			local tag = UIStyle.MakeLabel(row, RETIRED_TAG, true)
 			tag.AnchorPoint = Vector2.new(1, 0.5)
@@ -266,15 +334,25 @@ local function renderLoadoutRows()
 			end
 			if isSelected(entry.id) then
 				table.remove(selected, table.find(selected, entry.id))
-			elseif #selected < MAX_SLOTS then
-				table.insert(selected, entry.id)
-			else
+			elseif #selected >= MAX_SLOTS then
 				loadoutSetStatus("Pick only 2 - deselect one first")
 				return
+			elseif selectedWeight() + weightOf(entry.id) > WEIGHT_CAP then
+				-- Explained where it is felt, in the Charm's own terms. The server
+				-- would reject this too; catching it here is what makes the budget a
+				-- rule you learn instead of a wall you hit at Save.
+				loadoutSetStatus(
+					entry.displayName .. " is too heavy for what's picked (cap " .. tostring(WEIGHT_CAP) .. ")"
+				)
+				return
+			else
+				table.insert(selected, entry.id)
 			end
 			renderLoadoutRows()
 		end)
 	end
+
+	refreshWeightLabel()
 end
 
 -- Invokes the server (yields) - always call from a spawned thread.
@@ -318,13 +396,21 @@ local function buildLoadoutSection(parent)
 	saveButton.Position = UDim2.new(0, 0, 1, -48)
 	saveButton.FontFace = UIStyle.HeaderFontFace
 
+	-- Running total, sitting right beside Save so the budget is visible at the
+	-- moment of committing to it.
+	local weightLabel = UIStyle.MakeLabel(parent, "Weight 0/" .. tostring(WEIGHT_CAP), true)
+	weightLabel.Size = UDim2.fromOffset(120, 28)
+	weightLabel.Position = UDim2.new(0, 130, 1, -48)
+	weightLabel.TextSize = 13
+	weightLabel.FontFace = UIStyle.HeaderFontFace
+
 	local statusLabel = UIStyle.MakeLabel(parent, "", true)
 	statusLabel.Size = UDim2.new(1, 0, 0, 16)
 	statusLabel.Position = UDim2.new(0, 0, 1, -16)
 	statusLabel.TextSize = 12
 	statusLabel.TextColor3 = UIStyle.Colors.Accent
 
-	loadoutRefs = { active = activeLabel, rows = rows, status = statusLabel }
+	loadoutRefs = { active = activeLabel, rows = rows, status = statusLabel, weight = weightLabel }
 
 	saveButton.MouseButton1Click:Connect(function()
 		setLoadoutEvent:FireServer(selected)
@@ -334,6 +420,7 @@ local function buildLoadoutSection(parent)
 	-- just because it was closed and reopened.
 	selected = table.clone(lastSaved)
 	refreshActiveLabel()
+	refreshWeightLabel()
 	task.spawn(refreshOwned)
 end
 
@@ -874,7 +961,7 @@ loadoutResultEvent.OnClientEvent:Connect(function(success, reason)
 		lastSaved = table.clone(selected)
 		loadoutSetStatus("Saved - applies when the next match starts")
 	else
-		loadoutSetStatus(tostring(reason))
+		loadoutSetStatus(LOADOUT_REASON_TEXT[reason] or tostring(reason))
 	end
 end)
 

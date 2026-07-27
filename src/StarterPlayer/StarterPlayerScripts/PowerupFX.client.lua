@@ -28,6 +28,8 @@ local roleAssignedEvent = Remotes.Get(Remotes.Names.RoleAssigned)
 local lightsChangedEvent = Remotes.Get(Remotes.Names.LightsChanged)
 local powerupEffectEvent = Remotes.Get(Remotes.Names.PowerupEffect)
 local debugToggleLightsEvent = Remotes.Get(Remotes.Names.DebugToggleLights)
+local meetingStartedEvent = Remotes.Get(Remotes.Names.MeetingStarted)
+local matchEndedEvent = Remotes.Get(Remotes.Names.MatchEnded)
 
 local localPlayer = Players.LocalPlayer
 
@@ -185,8 +187,92 @@ if localPlayer.Character then
 end
 localPlayer.CharacterAdded:Connect(watchCharacter)
 
+-- ============================================================
+-- AUGUR MARK - the Vessel face of Augur (docs/DESIGN.md section 7): mark prey and
+-- see them through walls for a few seconds.
+--
+-- THE SERVER NEVER CREATES THIS HIGHLIGHT. Highlight instances replicate, so a
+-- server-made one would glow on EVERY client - the marked player would see
+-- themselves lit up, and so would every bystander. That inverts the mechanic: a
+-- mark the target can see is a warning, not a hunt. The server therefore sends
+-- only an instruction (targetUserId + duration) to the marker alone, and the
+-- Highlight is built here, locally. It exists on exactly one screen by design.
+--
+-- Cleared at duration, on the target dying or leaving, on meeting start, and on
+-- MatchEnded; an "End" payload clears it early. Token-guarded so a second mark
+-- supersedes the first cleanly.
+-- ============================================================
+local MARK_FILL_TRANSPARENCY = 0.6
+local MARK_OUTLINE_COLOR = Color3.fromRGB(214, 178, 74) -- sickly gold
+local MARK_FILL_COLOR = Color3.fromRGB(120, 96, 30)
+
+local markHighlight = nil
+local markToken = 0
+local markConns = {}
+
+local function clearMark()
+	markToken += 1
+	for _, conn in ipairs(markConns) do
+		conn:Disconnect()
+	end
+	markConns = {}
+	if markHighlight then
+		markHighlight:Destroy()
+		markHighlight = nil
+	end
+end
+
+local function startMark(data)
+	clearMark() -- one mark at a time; a new one always replaces
+	if type(data) ~= "table" then
+		return
+	end
+
+	local target = Players:GetPlayerByUserId(data.targetUserId)
+	local character = target and target.Character
+	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+	if not character or not humanoid then
+		return -- nothing to mark; the server already spent the cooldown, not our call
+	end
+
+	-- clearMark above already bumped the token, so this value is ours alone.
+	local myToken = markToken
+
+	local highlight = Instance.new("Highlight")
+	highlight.Adornee = character
+	highlight.FillColor = MARK_FILL_COLOR
+	highlight.FillTransparency = MARK_FILL_TRANSPARENCY
+	highlight.OutlineColor = MARK_OUTLINE_COLOR
+	highlight.OutlineTransparency = 0
+	highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop -- the through-walls part
+	highlight.Parent = character
+	markHighlight = highlight
+
+	local function expireIfCurrent()
+		if myToken == markToken then
+			clearMark()
+		end
+	end
+
+	-- The mark dies with its subject: a highlight left burning on a corpse or on a
+	-- player who left would keep pointing at something that is no longer prey.
+	table.insert(markConns, humanoid.Died:Connect(expireIfCurrent))
+	table.insert(markConns, target.AncestryChanged:Connect(function(_, parent)
+		if not parent then
+			expireIfCurrent()
+		end
+	end))
+	table.insert(markConns, target.CharacterRemoving:Connect(expireIfCurrent))
+
+	task.delay(tonumber(data.duration) or 0, expireIfCurrent)
+end
+
 powerupEffectEvent.OnClientEvent:Connect(function(powerupId, phase, data)
-	if powerupId == "Invisibility" and phase == "Start" then
+	if powerupId == "AugurMark" and phase == "Start" then
+		startMark(data)
+	elseif powerupId == "AugurMark" and phase == "End" then
+		clearMark()
+	elseif powerupId == "Invisibility" and phase == "Start" then
 		-- The server replicated Transparency 1; a local write overrides only our
 		-- OWN view (so we can still see ourselves, faintly). The server's later
 		-- restore replicates over this - no local cleanup needed on "End".
@@ -207,6 +293,12 @@ powerupEffectEvent.OnClientEvent:Connect(function(powerupId, phase, data)
 		applyLighting()
 	end
 end)
+
+-- A meeting gathers everyone in one room and a match end resets the world; a mark
+-- must survive neither. The server cancels its own effects on both, but the mark
+-- is client-only state with no server counterpart, so these are its only cleanup.
+meetingStartedEvent.OnClientEvent:Connect(clearMark)
+matchEndedEvent.OnClientEvent:Connect(clearMark)
 
 -- P fires the test lights toggle. Bound unconditionally: the client cannot read
 -- DebugFlags, so the SERVER gate decides whether it does anything.
