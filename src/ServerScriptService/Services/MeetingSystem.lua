@@ -17,8 +17,34 @@ local MatchService = require(ServerScriptService.Services.MatchService)
 local MeetingSystem = {}
 
 local MEETING_DURATION = 20 -- seconds to vote before auto-resolving
-local MEETING_TABLE_CENTER = Vector3.new(0, 0, 0) -- must match BuildEstateMap.lua's tableCenter
-local MEETING_SEAT_RADIUS = 10 -- must match BuildEstateMap.lua's SEAT_RADIUS
+
+-- THE SÉANCE TABLE, and it must match the map. This is the Séance Parlor's floor
+-- centre in EstateBuilder's plan (PLAN.Rooms.SeanceParlor is {-22,-70,22,-26}, so
+-- its centre is X=0, Z=-48) - the point Build() prints as THE MEETING / RITUAL
+-- CENTER on every run. The old value was the retired graybox's table at the
+-- origin, which on the real map is bare floor in the middle of the Great Hall.
+--
+-- THE Y IS 0 AND MEANS THE SAME THING IT ALWAYS DID: the ground floor walks at
+-- Y=0, and seatPlayersAtTable only ever reads .X and .Z - it keeps each player's
+-- own root height so rig offsets survive the teleport. Y carries no offset here
+-- and never did; it is the floor the table stands on.
+local MEETING_TABLE_CENTER = Vector3.new(0, 0, -48)
+
+-- Where players are teleported to, measured from the table centre.
+--
+-- RAISED FROM 10 TO 12 BECAUSE 10 IS NOW OCCUPIED. EstateBuilder seats eight
+-- séance chairs at radius 10 (DIM.RitualChairRadius), so the old value dropped
+-- every player inside a chair. The manor's ritual heart is a set of concentric
+-- rings - table 4.5, chairs to 11, braziers from 13 - and 12 is the clear annulus
+-- between the chairs' backs and the brazier bowls, wide enough for a character
+-- with roughly half a stud to spare on each side. It is also inside the
+-- Convergence zone's 12-stud radius, so a séance gathers exactly where the
+-- endgame is channelled.
+--
+-- IF EITHER RING MOVES, THIS MOVES. The chairs, the braziers and this constant
+-- are one composition split across two files; EstateBuilder's DIM block carries
+-- the same warning from the other side.
+local MEETING_SEAT_RADIUS = 12
 local DEAD_BODY_TAG = "DeadBody" -- must match the tag KillSystem applies
 local DEFAULT_WALKSPEED = 16
 local DEFAULT_JUMPPOWER = 50
